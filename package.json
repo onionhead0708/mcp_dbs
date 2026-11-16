@@ -1,7 +1,7 @@
 {
   "name": "mcp-dbs",
-  "version": "1.0.0",
-  "description": "MCP server for PostgreSQL (SQL Server and DuckDB planned) using connection profiles from DBeaver (DBDelve planned)",
+  "version": "2.0.0",
+  "description": "MCP server for PostgreSQL, SQL Server and DuckDB, using the connection profiles from DBeaver and DBDelve, with SSH and AWS SSM tunnels",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -11,7 +11,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --import ./test/setup.mjs --test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",

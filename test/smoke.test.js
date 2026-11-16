@@ -10,6 +10,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixtures = path.join(root, "test", "fixtures", "dbeaver");
 
 let server;
+let stderr = "";
 let nextId = 1;
 const pending = new Map();
 
@@ -32,10 +33,13 @@ before(async () => {
       DBEAVER_DATA_SOURCES_JSON: path.join(fixtures, "data-sources.json"),
       DBEAVER_CREDENTIALS_CONFIG_JSON: path.join(fixtures, "credentials-config.json"),
       DBDELVE_PROFILES: path.join(root, "test", "fixtures", "dbdelve", "profiles.toml"),
-      DBDELVE_VARIANT: ""
+      DBDELVE_VARIANT: "",
+      MCP_DBS_LOG: "info"
     },
-    stdio: ["pipe", "pipe", "inherit"]
+    stdio: ["pipe", "pipe", "pipe"]
   });
+  // stderr is the server's log; keep it for the logging test.
+  server.stderr.on("data", (chunk) => (stderr += chunk));
   let buffer = "";
   server.stdout.on("data", (chunk) => {
     buffer += chunk;
@@ -72,7 +76,7 @@ test("server identifies itself as mcp-dbs", async () => {
 
 test("lists the tools", async () => {
   const { tools } = await request("tools/list");
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["connect", "disconnect", "execute", "list_profiles", "query", "status"]);
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["connect", "disconnect", "execute", "list_profiles", "query", "reload_profiles", "status"]);
 });
 
 test("loads profiles from the DBeaver and DBDelve fixtures", async () => {
@@ -99,4 +103,11 @@ test("loads profiles from the DBeaver and DBDelve fixtures", async () => {
 test("query without a connection is an error, not a crash", async () => {
   const result = await request("tools/call", { name: "query", arguments: { sql: "select 1" } });
   assert.equal(result.isError, true);
+});
+
+test("logs to stderr, never stdout, and never a password", async () => {
+  await request("tools/call", { name: "reload_profiles", arguments: {} });
+  assert.match(stderr, /mcp-dbs info: dbeaver: 4 profiles/);
+  assert.match(stderr, /mcp-dbs info: dbdelve: 2 profiles/);
+  assert.ok(!/test-password/.test(stderr));
 });

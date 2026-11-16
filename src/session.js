@@ -2,6 +2,7 @@
 import { getDriver as defaultGetDriver } from "./drivers/index.js";
 import { openTunnel as defaultOpenTunnel } from "./tunnels/index.js";
 import { resolveSecret as defaultResolveSecret } from "./secrets/index.js";
+import { log, redact } from "./log.js";
 
 export class Session {
   #getDriver;
@@ -29,19 +30,31 @@ export class Session {
     // server that needs none still connects (ADR-37).
     const unsaved = secret === null;
     const password = unsaved ? "" : secret;
-    const tunnel = await this.#openTunnel(profile, { resolveSecret: this.#resolveSecret });
+    log.info(`connecting to ${profile.id}${profile.tunnel ? ` through ${profile.tunnel.type}` : ""}`);
+    let tunnel;
+    try {
+      tunnel = await this.#openTunnel(profile, { resolveSecret: this.#resolveSecret });
+    } catch (error) {
+      log.warn(`tunnel for ${profile.id} failed: ${redact(error.message, [password])}`);
+      throw new Error(redact(error.message, [password]));
+    }
+    if (tunnel.describe) log.info(`tunnel up: ${tunnel.describe}`);
     let handle;
     try {
       handle = await driver.connect(profile, tunnel, { password });
     } catch (error) {
       await tunnel.close().catch(() => {});
+      // No driver error should carry the password, but never let one through.
+      let message = redact(error.message, [password]);
       if (unsaved) {
-        error.message +=
+        message +=
           `. No password is saved for this profile in the OS password store (service '${ref.service}', account '${ref.account}'):` +
           " save it in DBDelve and connect again";
       }
-      throw error;
+      log.warn(`connect to ${profile.id} failed: ${message}`);
+      throw new Error(message);
     }
+    log.info(`connected to ${profile.id}`);
     this.#active = { profile, driver, handle, tunnel, connectedAt: new Date() };
   }
 
@@ -70,6 +83,7 @@ export class Session {
       await active.driver.close(active.handle);
     } finally {
       await active.tunnel.close();
+      log.info(`disconnected from ${active.profile.id}`);
     }
     return active.profile;
   }

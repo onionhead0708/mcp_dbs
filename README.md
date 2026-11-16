@@ -2,14 +2,14 @@
 
 A Model Context Protocol (MCP) server that lets MCP clients (Claude, Kiro, …) query your databases using the connection profiles you already have in DBeaver and DBDelve. You don't need to set up profiles by hand.
 
-> **Status:** this project is moving from a PostgreSQL-only server to a multi-engine one. See [ROADMAP.md](ROADMAP.md).
->
-> | | Today | Planned |
-> |---|---|---|
-> | Engines | PostgreSQL, SQL Server, DuckDB | |
-> | Profile sources | DBeaver, DBDelve | |
-> | Platforms | Linux, macOS, Windows (DBeaver found automatically) | |
-> | Tunnels | SSH, AWS SSM | |
+| | |
+|---|---|
+| **Engines** | PostgreSQL, SQL Server, DuckDB |
+| **Profile sources** | DBeaver, DBDelve |
+| **Tunnels** | SSH, AWS SSM |
+| **Platforms** | Linux, macOS, Windows |
+
+Upgrading from 1.x (`mcp-postgresql`)? See [CHANGELOG.md](CHANGELOG.md) for the breaking changes. The design decisions and their reasons are in [docs/ADR.md](docs/ADR.md).
 
 ## Prerequisites
 
@@ -167,6 +167,11 @@ Tunnel programs are stopped, along with anything they started, on `disconnect`, 
 | `execute` | Run DDL/DML statements and return the number of affected rows. Splits on `GO` for SQL Server. Refused on read-only profiles |
 | `disconnect` | Close the current connection |
 | `status` | Show the current profile, engine, server version and tunnel, and where each profile source was read from (or why it failed) |
+| `reload_profiles` | Read DBeaver and DBDelve again, so new or changed connections show up without restarting the server |
+
+## Logs
+
+The server logs to stderr, one line per event: profiles loaded, connects, tunnels and failures. Passwords and passphrases are never logged, and are removed from any error that echoes one. Set `MCP_DBS_LOG` to `error`, `warn`, `info` (the default), `debug` or `off`. MCP clients usually show a server's stderr in their MCP log.
 
 ## Development
 
