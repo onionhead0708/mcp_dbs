@@ -1,6 +1,6 @@
 # Roadmap: `mcp-dbs`: a multi-engine, multi-source, cross-platform MCP server
 
-Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Next: T6.3, then Phase 3.** Decisions are in §2.
+Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Phase 3 (SQL Server) in progress.** Decisions are in §2.
 
 ## 1. Goals
 
@@ -204,11 +204,11 @@ src/
 - [ ] T5.2 Map engines: `postgres` (or no engine), `mssql`, `duckdb`, and an `{ ssm = { engine } }` table → that engine plus an SSM tunnel. Any other engine → skipped with a reason.
 - [ ] T5.3 Skip rules: `password_command` set (D3), `ssh.run_as` set, `service` (pg service file) set.
 - [ ] T5.4 `secrets/keychain.js` reads the password from service `dbdelve[-variant]`, account = id. It is called **only when `connect` runs**, so `list_profiles` never triggers a keychain prompt. A missing entry gives a clear error.
-- [ ] T5.5 **Spike first:** check on macOS, Windows and Linux (gnome-keyring) that `@napi-rs/keyring` reads entries DBDelve wrote. If this fails, everything else in this phase is blocked. Note: DBDelve uses the Rust `keyring` crate **v4**, `@napi-rs/keyring` wraps **v3**, so Secret Service attributes may differ on Linux. The SSH passphrase service is `dbdelve[-variant]/ssh-passphrase`.
+- [x] T5.5 **Spike first:** check on macOS, Windows and Linux (gnome-keyring) that `@napi-rs/keyring` reads entries DBDelve wrote. If this fails, everything else in this phase is blocked. Note: DBDelve uses the Rust `keyring` crate **v4**, `@napi-rs/keyring` wraps **v3**, so Secret Service attributes may differ on Linux. The SSH passphrase service is `dbdelve[-variant]/ssh-passphrase`.
   - Run `node scripts/spike-keychain.js` on each OS. It reads every DBDelve profile's password, never prints a secret, and shows what the OS itself stores when a read misses.
-  - **Linux: passed (2026-11-16, Secret Service).** Entries written by `keyring` 4.2.0 exactly as DBDelve writes them, read back by `@napi-rs/keyring` 2.1.2 in both directions, including the `…/ssh-passphrase` service.
+  - **Linux: passed (2026-11-16, Secret Service).** Entries written by `keyring` 4.2.0 exactly as DBDelve writes them, read back by `@napi-rs/keyring` 2.1.2 in both directions, including the `…/ssh-passphrase` service. Then confirmed with a password DBDelve itself saved.
   - **macOS: passed (2026-11-16, arm64, Node 24).** A password saved by DBDelve itself was read, and `findCredentials` listed DBDelve's account. No access prompt appeared.
-  - **Windows: not checked** (no Windows machine). It does not block Phases 3–5; check it before T5.4 ships on Windows.
+  - **Windows: not checked** (no Windows machine). It does not block Phases 3–5; check it before T5.4 ships on Windows. *(Ticked for Linux and macOS.)*
 - [ ] T5.6 Map `sslmode`/`root_certificate`, default ports, empty `database`, `schema` and `mode`.
 - [ ] T5.7 Tests: parsing fixtures with a mocked keychain.
 

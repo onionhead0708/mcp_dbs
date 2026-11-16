@@ -261,7 +261,7 @@ DBDelve's folder follows DBDelve's own `store.rs`: `$XDG_DATA_HOME`, `~/Library/
 **Decision.** Use `@napi-rs/keyring`. On Linux, always pass `{ linux: { store: "secret-service" } }`.
 
 **Why.**
-- On Linux, the spike (T5.5) wrote entries with `keyring` 4.2.0 exactly as DBDelve's `store.rs` does, and read them with `@napi-rs/keyring`. It also tested the other direction and the `dbdelve/ssh-passphrase` service. All of it matched.
+- On Linux, the spike (T5.5) wrote entries with `keyring` 4.2.0 exactly as DBDelve's `store.rs` does, and read them with `@napi-rs/keyring`. It also tested the other direction and the `dbdelve/ssh-passphrase` service. All of it matched. A password saved by DBDelve itself was then read on a real Linux desktop.
 - Without the pin, a missing Secret Service would look like "no password saved" instead of a clear error. DBDelve never writes to the kernel keyring, so falling back to it can never find anything.
 
 - On macOS (arm64), the spike read a password that DBDelve itself had saved, and `findCredentials` listed DBDelve's account. No access prompt appeared.
