@@ -32,7 +32,7 @@ Status values: **Accepted**, **Superseded by ADR-n**, **Proposed** (not agreed y
 | [24](#adr-24-paths-are-found-automatically-env-vars-are-overrides) | Paths found automatically; env vars override | Accepted | 2026-11-16 |
 | [25](#adr-25-tools-live-in-srcserverjs-indexjs-only-wires) | Tools in `src/server.js`; `index.js` only wires | Accepted | 2026-11-16 |
 | [26](#adr-26-ci-on-linux-macos-and-windows-with-node-20-and-22) | CI on three OSes × Node 20/22 | Accepted | 2026-11-16 |
-| [27](#adr-27-napi-rskeyring-pinned-to-secret-service-on-linux) | `@napi-rs/keyring`, pinned to Secret Service on Linux | Accepted (macOS check pending) | 2026-11-16 |
+| [27](#adr-27-napi-rskeyring-pinned-to-secret-service-on-linux) | `@napi-rs/keyring`, pinned to Secret Service on Linux | Accepted | 2026-11-16 |
 
 ADR-1 to ADR-13 are D1–D13 in `ROADMAP.md` §2, and ADR-14 is Q-E. ADR-15 onwards were decided while building Phases 1 and 2.
 
@@ -264,4 +264,6 @@ DBDelve's folder follows DBDelve's own `store.rs`: `$XDG_DATA_HOME`, `~/Library/
 - On Linux, the spike (T5.5) wrote entries with `keyring` 4.2.0 exactly as DBDelve's `store.rs` does, and read them with `@napi-rs/keyring`. It also tested the other direction and the `dbdelve/ssh-passphrase` service. All of it matched.
 - Without the pin, a missing Secret Service would look like "no password saved" instead of a clear error. DBDelve never writes to the kernel keyring, so falling back to it can never find anything.
 
-**Consequences.** macOS and Windows still have to be confirmed with `scripts/spike-keychain.js`. If macOS fails, this ADR is superseded before Phase 5 starts. The package is a regular dependency, so CI checks that it installs on every OS.
+- On macOS (arm64), the spike read a password that DBDelve itself had saved, and `findCredentials` listed DBDelve's account. No access prompt appeared.
+
+**Consequences.** Windows (Credential Manager) has not been checked yet, because there is no Windows machine. Check it with `scripts/spike-keychain.js` before Phase 5 is relied on there. The package is a regular dependency, so CI checks that it installs on every OS.
