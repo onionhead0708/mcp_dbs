@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import util from "node:util";
 import { fileURLToPath } from "node:url";
-import { decryptCredentials, mapDbeaver, tlsFrom, dbeaverSource } from "../src/profiles/sources/dbeaver.js";
+import { decryptCredentials, mapDbeaver, tlsFrom, mssqlTlsFrom, dbeaverSource } from "../src/profiles/sources/dbeaver.js";
 import { resolveSecret } from "../src/secrets/index.js";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "dbeaver");
@@ -31,9 +31,15 @@ test("decrypts the credentials fixture", () => {
   assert.equal(credentials["postgres-jdbc-local-1"]["#connection"].user, "tester");
 });
 
-test("loads the fixture: Postgres with credentials, everything else skipped with a reason", async () => {
+test("loads the fixture: Postgres and SQL Server with credentials, the rest skipped with a reason", async () => {
   const { profiles, skipped } = dbeaverSource(fromFiles(paths)).load();
-  assert.deepEqual(profiles.map((p) => p.id).sort(), ["dbeaver:Production/orders-db", "dbeaver:local-postgres"]);
+  assert.deepEqual(profiles.map((p) => p.id).sort(), ["dbeaver:Production/orders-db", "dbeaver:local-postgres", "dbeaver:local-sqlserver"]);
+
+  const mssql = profiles.find((p) => p.id === "dbeaver:local-sqlserver");
+  assert.equal(mssql.engine, "mssql");
+  assert.equal(mssql.port, 1433);
+  assert.deepEqual(mssql.tls, { mode: "require", rootCert: null, trustServerCert: true });
+  assert.equal(await resolveSecret(mssql.auth.secretRef), "test-password-3");
 
   const local = profiles.find((p) => p.id === "dbeaver:local-postgres");
   assert.equal(local.engine, "postgres");
@@ -45,7 +51,6 @@ test("loads the fixture: Postgres with credentials, everything else skipped with
 
   const reasons = Object.fromEntries(skipped.map((s) => [s.id, s.reason]));
   assert.match(reasons["dbeaver:no-saved-password"], /no saved user/);
-  assert.match(reasons["dbeaver:local-sqlserver"], /SQL Server/);
   // The DuckDB name contains "/" and must survive as one id.
   assert.match(reasons["dbeaver:DuckDB@/home/user/data/test.duckdb"], /DuckDB/);
   assert.match(reasons["dbeaver:DBeaver Sample Database (SQLite)"], /sqlite/);
@@ -117,7 +122,7 @@ test("a broken file is reported and the other projects still load", () => {
       { project: "Work", dataSourcesFiles: ["/nonexistent/data-sources.json"], credentialsPath: "/nonexistent/c.json" },
     ],
   })).load();
-  assert.equal(result.profiles.length, 2);
+  assert.equal(result.profiles.length, 3);
   assert.match(result.errors[0], /cannot read \/nonexistent/);
 });
 
@@ -130,4 +135,37 @@ test("a missing credentials file means no saved passwords", () => {
   const { profiles, skipped } = dbeaverSource(fromFiles({ ...paths, credentialsPath: "/nonexistent/c.json" })).load();
   assert.equal(profiles.length, 0);
   assert.ok(skipped.some((s) => s.id === "dbeaver:local-postgres" && /no saved user/.test(s.reason)));
+});
+
+const mssql = (configuration = {}, extra = {}) => ({
+  provider: "sqlserver",
+  driver: "microsoft",
+  name: "ms",
+  configuration: { host: "sql.example.com", port: "1433", database: "app", "auth-model": "sqlserver_database", ...configuration },
+  ...extra,
+});
+
+test("SQL Server: Sybase, jTDS and non-SQL sign-ins are skipped with a reason", () => {
+  assert.match(one(mssql({}, { driver: "jtds_sqlserver" })).skipped[0].reason, /jTDS/);
+  assert.match(one(mssql({}, { provider: "mssql", driver: "sybase_jtds" })).skipped[0].reason, /Sybase/);
+  assert.match(one(mssql({ "auth-model": "sqlserver_ntlm" })).skipped[0].reason, /sqlserver_ntlm.*not supported/);
+  assert.equal(one(mssql({ "auth-model": undefined })).profiles.length, 1);
+  assert.equal(one(mssql({}, { provider: "mssql" })).profiles[0].engine, "mssql");
+});
+
+test("SQL Server: host\\INSTANCE without a port has no port; empty database is none", () => {
+  const [named] = one(mssql({ host: "sql.example.com\\SQLEXPRESS", port: "", database: "" })).profiles;
+  assert.equal(named.port, null);
+  assert.equal(named.database, null);
+  assert.equal(one(mssql({ port: "" })).profiles[0].port, 1433);
+});
+
+test("SQL Server TLS: encrypt, trust-server-certificate, the SSL tab, else verify", () => {
+  const tls = (configuration) => mssqlTlsFrom(configuration);
+  assert.deepEqual(tls({}), { mode: "verify-full", rootCert: null, trustServerCert: null });
+  assert.deepEqual(tls({ "provider-properties": { sslTrustServerCertificate: "true" } }), { mode: "require", rootCert: null, trustServerCert: true });
+  assert.equal(tls({ properties: { trustServerCertificate: "false" } }).trustServerCert, false);
+  assert.equal(tls({ properties: { encrypt: "false" } }).mode, "disable");
+  assert.equal(tls({ properties: { Encrypt: "optional" } }).mode, "disable");
+  assert.equal(tls({ properties: { sslmode: "verify-ca" } }).mode, "verify-ca");
 });

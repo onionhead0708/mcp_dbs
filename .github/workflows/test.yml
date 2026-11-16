@@ -26,3 +26,33 @@ jobs:
       # Unit tests plus test/smoke.test.js, which starts the server over stdio
       # and calls tools/list and list_profiles.
       - run: npm test
+
+  # T3.9: the SQL Server driver against a real server. Linux only: the image
+  # is Linux-only and service containers need a Linux runner.
+  mssql:
+    runs-on: ubuntu-latest
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: Test-Passw0rd!
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'Test-Passw0rd!' -Q 'SELECT 1' -b -o /dev/null"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 20s
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node --test test/mssql.integration.test.js
+        env:
+          MSSQL_TEST_PASSWORD: Test-Passw0rd!
+          MSSQL_TEST_PORT: "1433"
