@@ -2,6 +2,7 @@
 // returns { profiles, skipped, location?, errors?: string[] } (it may be
 // async). A source that throws is reported in `errors` and does not stop the
 // others; so are the partial errors a source returns.
+import { log } from "../log.js";
 
 export class Registry {
   #sources;
@@ -56,6 +57,11 @@ export class Registry {
       skipped.push(...result.skipped);
     }
     const profiles = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id, "en"));
+    for (const source of sources) {
+      if (source.ok) log.info(`${source.name}: ${source.profiles} profiles, ${source.skipped} skipped (${source.location ?? "no location"})`);
+      else log.warn(`${source.name}: ${source.error}`);
+    }
+    for (const error of errors.filter((e) => sources.find((s) => s.name === e.source)?.ok)) log.warn(`${error.source}: ${error.message}`);
     return { profiles, skipped, errors, sources };
   }
 

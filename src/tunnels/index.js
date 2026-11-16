@@ -5,6 +5,7 @@ import { startSsh } from "./ssh.js";
 import { startSsm } from "./ssm.js";
 import { stopProcess, exited } from "./process.js";
 import { resolveSecret as defaultResolveSecret } from "../secrets/index.js";
+import { redact } from "../log.js";
 
 /**
  * Tunnel types that can be opened. Sources skip profiles that need any other
@@ -83,10 +84,11 @@ export async function openTunnel(profile, { resolveSecret = defaultResolveSecret
   const remote = remoteOf(profile);
   const localPort = await freePort();
   let started;
+  let passphrase = "";
   if (tunnel.type === "ssh") {
     if (!tunnel.host) throw new Error("the SSH tunnel has no host");
     // A key without a passphrase has no keychain entry: that is fine.
-    const passphrase = (await resolveSecret(tunnel.secretRef)) || "";
+    passphrase = (await resolveSecret(tunnel.secretRef)) || "";
     started = startSsh(tunnel, remote, localPort, { passphrase });
   } else {
     if (!tunnel.target) throw new Error("the SSM tunnel has no target");
@@ -97,7 +99,8 @@ export async function openTunnel(profile, { resolveSecret = defaultResolveSecret
     await waitUntilReady(started, timeoutMs);
   } catch (error) {
     stopProcess(started.child);
-    throw error;
+    // ssh never prints a passphrase, but its output is not ours to trust.
+    throw new Error(redact(error.message, [passphrase]));
   }
   const via = tunnel.type === "ssh" ? `ssh ${tunnel.user ? `${tunnel.user}@` : ""}${tunnel.host}${tunnel.port ? `:${tunnel.port}` : ""}` : `ssm ${tunnel.target}`;
   return {

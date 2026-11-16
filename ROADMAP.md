@@ -1,16 +1,16 @@
 # Roadmap: `mcp-dbs`: a multi-engine, multi-source, cross-platform MCP server
 
-Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Phases 3–5 merged; Phase 6 (tunnels) in review. Next: Phase 7.** Decisions are in §2.
+Status: **All phases (0–7) done; version 2.0.0 (2026-11-16).** Still open: the Windows keychain check (T5.5) and a manual SSM test against real AWS (T6.8). Decisions are in §2.
 
 ## 1. Goals
 
-| # | Goal | Today |
+| # | Goal | Status |
 |---|------|-------|
-| G1 | Connect to **PostgreSQL, Microsoft SQL Server and DuckDB** (read and write) | PostgreSQL only (`pg`) |
-| G2 | Load profiles from **DBeaver and DBDelve** | DBeaver only, from two paths set in env vars |
-| G3 | Run on **Linux, macOS and Windows** | Written and documented for Windows only |
-| G4 | Reach databases through **SSH tunnels and AWS SSM** | Not supported |
-| G5 | Rename the project to **`mcp-dbs`** | `mcp-postgresql` |
+| G1 | Connect to **PostgreSQL, Microsoft SQL Server and DuckDB** (read and write) | Done (Phases 3, 4) |
+| G2 | Load profiles from **DBeaver and DBDelve** | Done (Phases 1, 5) |
+| G3 | Run on **Linux, macOS and Windows** | Done (Phase 2; CI on all three) |
+| G4 | Reach databases through **SSH tunnels and AWS SSM** | Done (Phase 6) |
+| G5 | Rename the project to **`mcp-dbs`** | Done (Phase 0) |
 
 Out of scope for now, but the design must not block them: MySQL/MariaDB, SQLite, and Azure Entra sign-in for SQL Server.
 
@@ -238,10 +238,12 @@ src/
   *Phase 6 notes:* readiness comes from the program's own output (ADR-41). The askpass helper answers passphrase prompts only (ADR-42). Tunnel processes are stopped as a tree (ADR-43). `MCP_DBS_SSH_CONFIG` was added (ADR-44). DBeaver SSH is read as DBDelve imports it (ADR-45). SSH is tested against Docker sshd + Postgres (`scripts/ssh-test-env.sh`, CI job `ssh-tunnel`). The SSM lifecycle is tested with a stand-in `aws`; real AWS is tested by hand only.
 
 ### Phase 7: Polish
-- [ ] T7.1 Add `reload_profiles` and the `list_profiles` filters. Show skip reasons.
-- [ ] T7.2 Clean up stderr logging. Secrets never appear in logs or errors.
-- [ ] T7.3 Bring CLAUDE.md and the README up to date (architecture, sources, engines, tunnels, OS paths).
-- [ ] T7.4 Bump the version to 2.0.0 and list the breaking changes: the new name, the profile-id prefix, and the new tools.
+- [x] T7.1 Add `reload_profiles` and the `list_profiles` filters. Show skip reasons.
+- [x] T7.2 Clean up stderr logging. Secrets never appear in logs or errors.
+- [x] T7.3 Bring CLAUDE.md and the README up to date (architecture, sources, engines, tunnels, OS paths).
+- [x] T7.4 Bump the version to 2.0.0 and list the breaking changes: the new name, the profile-id prefix, and the new tools.
+
+  *Phase 7 notes:* `reload_profiles` keeps the open connection and says whether its profile still exists. Logging goes to stderr through `src/log.js` (`MCP_DBS_LOG`); the session and tunnels pass every error through `redact()`. Breaking changes are listed in `CHANGELOG.md`.
 
 ## 6. Suggested order
 

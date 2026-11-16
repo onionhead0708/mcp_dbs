@@ -4,7 +4,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { ENGINES, SOURCES, describeProfile } from "./profiles/model.js";
 import { formatRows, toJsonSafe } from "./format.js";
 
-export const VERSION = "1.0.0";
+export const VERSION = "2.0.0";
 
 const sqlArg = { type: "string", description: "SQL text" };
 
@@ -60,6 +60,13 @@ export const TOOLS = [
   {
     name: "disconnect",
     description: "Close the current database connection. For DuckDB this releases the file so other programs can open it.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "reload_profiles",
+    description:
+      "Read DBeaver and DBDelve again, so connections added or changed there show up without restarting the server. " +
+      "The current connection stays open.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -146,6 +153,26 @@ export function createHandlers({ registry, session }) {
       } catch (error) {
         return fail(`Disconnect error: ${error.message}`);
       }
+    },
+
+    async reload_profiles() {
+      const { profiles, skipped, errors, sources } = await registry.reload();
+      const current = session.profile;
+      const stillThere = current ? profiles.some((p) => p.id === current.id) : null;
+      return json({
+        profiles: profiles.length,
+        skipped: skipped.length,
+        sources,
+        errors,
+        ...(current
+          ? {
+              connected: current.id,
+              note: stillThere
+                ? "The current connection was kept, with its old settings; connect again to use any changes."
+                : "The current profile is gone or now skipped after the reload; the open connection was kept until you disconnect.",
+            }
+          : {}),
+      });
     },
 
     async status() {

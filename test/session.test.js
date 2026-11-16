@@ -140,3 +140,23 @@ test("an unsaved keychain password connects blank, and a failed login says where
   await assert.rejects(session.connect(profile), /authentication failed\. No password is saved .*service 'dbdelve', account 'x'.*save it in DBDelve/);
   assert.deepEqual(seen, [""]);
 });
+
+test("reload_profiles reads the sources again and keeps the connection", async () => {
+  const { handlers } = setup();
+  await handlers.connect({ profile_id: "rw" });
+  const result = JSON.parse(textOf(await handlers.reload_profiles()));
+  assert.equal(result.profiles, 2);
+  assert.equal(result.connected, "dbeaver:rw");
+  assert.match(result.note, /kept/);
+  assert.equal(JSON.parse(textOf(await handlers.status())).connected, true);
+});
+
+test("a password that a driver echoes is removed from the error", async () => {
+  const { inlineSecret } = await import("../src/secrets/index.js");
+  const session = new Session({
+    getDriver: () => ({ connect: async (p, e, { password }) => { throw new Error(`login failed for password ${password}`); } }),
+    openTunnel: async (p) => ({ host: p.host, port: p.port, close: async () => {} }),
+  });
+  const profile = makeProfile({ source: "dbeaver", localId: "x", engine: "postgres", host: "h", auth: { type: "password", user: "u", secretRef: inlineSecret("hunter2") } });
+  await assert.rejects(session.connect(profile), (error) => !error.message.includes("hunter2") && /password \*\*\*/.test(error.message));
+});
