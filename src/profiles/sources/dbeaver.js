@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { makeProfile, normalizeTlsMode } from "../model.js";
 import { inlineSecret } from "../../secrets/index.js";
 import { locateDbeaver } from "../../config.js";
+import { SUPPORTED_TUNNELS } from "../../tunnels/index.js";
 
 // DBeaver's fixed key. The file is AES-128-CBC, with the IV in the first 16 bytes.
 const KEY = Buffer.from("babb4a9f774ab853c96c2d653dfe544a", "hex");
@@ -106,6 +107,40 @@ export function duckdbPath(configuration) {
   return file;
 }
 
+/**
+ * DBeaver's SSH tunnel (T6.5), as DBDelve's importer reads it: key or agent
+ * login only (ADR-11), no jump hosts. The key's passphrase, when DBeaver saved
+ * one, is the `password` of the connection's `network/ssh_tunnel` credentials.
+ * Returns { tunnel } or { reason }.
+ */
+export function sshTunnelFrom(handler, login) {
+  const properties = handler?.properties ?? {};
+  const property = (key) => text(properties[key]);
+  const jumps = Number(property("jumpServer.count") ?? 0) > 0 || isTrue(property("jumpServerEnabled"));
+  if (jumps) return { reason: "its SSH tunnel goes through a jump server, which is not supported" };
+  const authType = property("authType");
+  let identityFile = null;
+  if (authType === "PUBLIC_KEY") identityFile = property("keyPath");
+  else if (authType !== "AGENT") return { reason: "its SSH tunnel logs in with a password; only keys and ssh-agent are supported (ADR-11)" };
+  const host = property("host");
+  if (!host) return { reason: "its SSH tunnel has no host" };
+  if (identityFile && !identityFile.startsWith("~/") && !/^([a-zA-Z]:[\\/]|[\\/])/.test(identityFile)) {
+    return { reason: `its SSH key path is not absolute (${identityFile})` };
+  }
+  const port = property("port");
+  const passphrase = authType === "PUBLIC_KEY" ? text(login?.password) : null;
+  return {
+    tunnel: {
+      type: "ssh",
+      host,
+      port: port ? Number(port) : null,
+      user: text(login?.user) ?? text(handler?.user),
+      identityFile,
+      secretRef: passphrase ? inlineSecret(passphrase) : null,
+    },
+  };
+}
+
 /** Why a SQL Server connection's sign-in can't be used, or null (ADR-5). */
 function mssqlAuthProblem(configuration) {
   const model = configuration["auth-model"];
@@ -156,11 +191,24 @@ export function mapDbeaver(dataSources, credentials, { project = "General" } = {
     }
 
     const otherHandlers = Object.entries(configuration.handlers ?? {})
-      .filter(([id, h]) => !id.endsWith("_ssl") && isTrue(h?.enabled))
+      .filter(([id, h]) => !id.endsWith("_ssl") && id !== "ssh_tunnel" && isTrue(h?.enabled))
       .map(([id]) => id);
     if (otherHandlers.length) {
-      skip(`network handler not supported yet: ${otherHandlers.join(", ")}`);
+      skip(`network handler not supported: ${otherHandlers.join(", ")}`);
       continue;
+    }
+    let tunnel = null;
+    if (isTrue(configuration.handlers?.ssh_tunnel?.enabled)) {
+      const mapped = sshTunnelFrom(configuration.handlers.ssh_tunnel, credentials[key]?.["network/ssh_tunnel"]);
+      if (mapped.reason) {
+        skip(mapped.reason);
+        continue;
+      }
+      if (!SUPPORTED_TUNNELS.has("ssh")) {
+        skip("SSH tunnels are not supported yet");
+        continue;
+      }
+      tunnel = mapped.tunnel;
     }
 
     if (engine === "mssql") {
@@ -191,6 +239,7 @@ export function mapDbeaver(dataSources, credentials, { project = "General" } = {
           auth: { type: "password", user: cred.user, secretRef: inlineSecret(cred.password) },
           tls: engine === "mssql" ? mssqlTlsFrom(configuration) : tlsFrom(configuration),
           readOnly: isTrue(configuration["read-only"]),
+          tunnel,
         })
       );
     } catch (error) {

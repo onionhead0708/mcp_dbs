@@ -29,7 +29,7 @@ export class Session {
     // server that needs none still connects (ADR-37).
     const unsaved = secret === null;
     const password = unsaved ? "" : secret;
-    const tunnel = await this.#openTunnel(profile);
+    const tunnel = await this.#openTunnel(profile, { resolveSecret: this.#resolveSecret });
     let handle;
     try {
       handle = await driver.connect(profile, tunnel, { password });
@@ -89,7 +89,7 @@ export class Session {
       profile: profile.id,
       engine: profile.engine,
       readOnly: profile.readOnly,
-      tunnel: profile.tunnel?.type ?? null,
+      tunnel: profile.tunnel ? tunnel.describe ?? profile.tunnel.type : null,
       endpoint: profile.engine === "duckdb" ? profile.path : tunnel.port ? `${tunnel.host}:${tunnel.port}` : tunnel.host,
       connectedAt: connectedAt.toISOString(),
       serverVersion,

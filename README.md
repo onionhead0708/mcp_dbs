@@ -9,7 +9,7 @@ A Model Context Protocol (MCP) server that lets MCP clients (Claude, Kiro, …) 
 > | Engines | PostgreSQL, SQL Server, DuckDB | |
 > | Profile sources | DBeaver, DBDelve | |
 > | Platforms | Linux, macOS, Windows (DBeaver found automatically) | |
-> | Tunnels | none | SSH, AWS SSM |
+> | Tunnels | SSH, AWS SSM | |
 
 ## Prerequisites
 
@@ -71,7 +71,7 @@ Skipped, with the reason shown in `list_profiles`:
 - profiles that use a Postgres `service` file
 - profiles with SSH `run_as`
 - engines other than PostgreSQL, SQL Server and DuckDB
-- SSH and SSM tunnels, until tunnel support lands
+- SSH tunnels with `run_as` (see above)
 
 When running the server directly, you can put these in a `.env` file (copy `.env.example`). When an MCP client starts the server, put them in the client's `env` instead, because the client does not read `.env`.
 
@@ -116,7 +116,7 @@ The same JSON as for Claude Desktop, in `~/.kiro/settings/mcp.json` (for every w
 2. **Connect:** "Connect to dbeaver:Production/orders-db"
 3. **Query:** "Query: SELECT * FROM users LIMIT 10"
 
-Connections that can't be used (no saved password, an engine not supported yet, an SSH tunnel) are listed under `skipped` with the reason.
+Connections that can't be used (no saved password, an engine not supported yet, an SSH tunnel that logs in with a password) are listed under `skipped` with the reason.
 
 **TLS** follows the connection's SSL tab in DBeaver (`sslMode`, CA certificate), or its `sslmode` driver property. When neither is set, TLS is off for `localhost` and for the `local`/`no_ssl` folders, and on (without checking the certificate) for everything else.
 
@@ -140,6 +140,23 @@ Connections that can't be used (no saved password, an engine not supported yet, 
 - Values are exact: big integers and decimals come back as strings, and timestamps keep their microseconds.
 - DuckDB support is an optional native package, with prebuilt binaries for Linux, macOS and Windows on x64 and arm64. If it can't be installed, everything else still works.
 
+## Tunnels
+
+Connections that go through **SSH** (DBeaver and DBDelve) or **AWS SSM** (DBDelve) open their tunnel on `connect` and close it on `disconnect`. `status` shows the route, e.g. `ssh deploy@bastion -> db.internal:5432`.
+
+**SSH**
+- Uses the `ssh` installed on your system, so `~/.ssh/config`, ssh-agent and hardware keys work as they do in a terminal. On Windows that is the built-in OpenSSH.
+- **Keys and ssh-agent only.** Tunnels that log in with a password are skipped, and so are DBeaver tunnels through jump servers.
+- A key's passphrase comes from where the profile keeps it: DBDelve's keychain entry, or the tunnel's saved password in DBeaver. It reaches ssh through a small helper that answers passphrase prompts and nothing else. It never appears on a command line.
+- **Host keys are never accepted for you.** If the bastion's key is unknown or has changed, `connect` tells you to run `ssh <host>` once in a terminal to check it.
+- `MCP_DBS_SSH_CONFIG=/path/to/config` makes ssh use that config file instead of `~/.ssh/config`.
+
+**AWS SSM**
+- Needs the AWS CLI and the Session Manager plugin, either on the `PATH` or at the paths set in the DBDelve profile.
+- Uses the profile's AWS profile and region. If your credentials have expired, the error tells you to sign in again (e.g. `aws sso login`).
+
+Tunnel programs are stopped, along with anything they started, on `disconnect`, when you connect elsewhere, and when the server exits.
+
 ## Tools
 
 | Tool | Description |
@@ -155,6 +172,14 @@ Connections that can't be used (no saved password, an engine not supported yet, 
 
 ```bash
 npm test
+```
+
+The SSH tunnel integration test needs Docker:
+
+```bash
+mkdir -p /tmp/ssh-test && scripts/ssh-test-env.sh up /tmp/ssh-test
+. /tmp/ssh-test/env.sh && npm test
+scripts/ssh-test-env.sh down
 ```
 
 The SQL Server integration test runs only when a server is given:

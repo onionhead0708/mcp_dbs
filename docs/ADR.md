@@ -46,6 +46,11 @@ Status values: **Accepted**, **Superseded by ADR-n**, **Proposed** (not agreed y
 | [38](#adr-38-dbdelve-profiles-follow-dbdelves-own-defaults-unknown-values-fail-safe) | DBDelve profiles follow DBDelve's defaults; unknown values fail safe | Accepted | 2026-11-16 |
 | [39](#adr-39-tunnelled-profiles-wait-for-phase-6-in-every-source) | Tunnelled profiles wait for Phase 6, in every source | Accepted | 2026-11-16 |
 | [40](#adr-40-dbdelve_profiles-points-at-a-profilestoml) | `DBDELVE_PROFILES` points at a `profiles.toml` | Accepted | 2026-11-16 |
+| [41](#adr-41-a-tunnel-is-ready-when-its-program-says-so) | A tunnel is ready when its program says so | Accepted | 2026-11-16 |
+| [42](#adr-42-ssh-secrets-go-through-a-narrow-askpass-helper-host-keys-are-never-accepted-for-the-user) | SSH secrets through a narrow askpass helper; host keys never accepted for the user | Accepted | 2026-11-16 |
+| [43](#adr-43-tunnel-processes-are-stopped-as-a-tree) | Tunnel processes are stopped as a tree | Accepted | 2026-11-16 |
+| [44](#adr-44-mcp_dbs_ssh_config-names-an-ssh-config-file) | `MCP_DBS_SSH_CONFIG` names an ssh config file | Accepted | 2026-11-16 |
+| [45](#adr-45-dbeaver-ssh-tunnels-are-read-the-way-dbdelve-imports-them) | DBeaver SSH tunnels are read the way DBDelve imports them | Accepted | 2026-11-16 |
 
 ADR-1 to ADR-13 are D1–D13 in `ROADMAP.md` §2, and ADR-14 is Q-E. ADR-15 onwards were decided while building Phases 1 and 2.
 
@@ -435,3 +440,71 @@ Only `[[profiles]]` is read, and unknown fields are ignored.
 **Decision.** A new optional env var, `DBDELVE_PROFILES`, names a `profiles.toml` directly, in the same way `DBEAVER_DATA_SOURCES_JSON` does for DBeaver. The keychain service still comes from `DBDELVE_VARIANT`.
 
 **Why.** Tests, and users with an unusual setup, need to point at a file without faking a home folder on every OS. The keychain service has to keep following the variant, or the passwords would be read from the wrong place.
+
+## ADR-41: A tunnel is ready when its program says so
+
+**Decision.**
+- The local port is picked by the OS (`listen(0)` on 127.0.0.1) and then given to the tunnel program.
+- ssh runs with `-v`. The tunnel is ready when ssh logs `Local forwarding listening on 127.0.0.1 port N`, which ssh only does after logging in.
+- The SSM tunnel is ready when the plugin prints `Waiting for connections`.
+- If the program exits first, or nothing happens within 30 s, `connect` fails with an explanation built from the program's own output, and the program is stopped.
+- Through a tunnel, a SQL Server named instance needs its port. SQL Server Browser uses UDP, which no tunnel carries.
+
+**Why.**
+- Polling the local port would race with ssh's login, and could reach something else that took the port.
+- The log line is exact, and it also proves that the login worked.
+- `ExitOnForwardFailure=yes` makes ssh exit, rather than carry on without a tunnel, if the port was taken in between.
+
+## ADR-42: SSH secrets go through a narrow askpass helper; host keys are never accepted for the user
+
+**Decision.**
+- **With a passphrase saved.** It reaches ssh through `SSH_ASKPASS` (with `SSH_ASKPASS_REQUIRE=force`), via a small helper:
+  - The helper is a shell or `.cmd` wrapper around `askpass.mjs`, written to a private temp folder.
+  - It reads the passphrase from an env var that only ssh's environment carries.
+  - It answers **only** prompts that ask for a passphrase. A host-key question or a password prompt gets no answer.
+- **Without a passphrase saved.** ssh runs with `BatchMode=yes`.
+- **Always:**
+  - `PasswordAuthentication=no` and `KbdInteractiveAuthentication=no` (ADR-11).
+  - Host-key checking is left exactly as the user's ssh config sets it. If the key is unknown or has changed, `connect` fails and tells the user to run `ssh <host>` once (T6.4).
+
+**Why.**
+- The passphrase never appears on a command line, where other users could read it in the process list, and never in a file.
+- The helper can't be tricked into accepting a host key.
+- `BatchMode` means a key that needs a passphrase fails at once, instead of hanging on a prompt nobody can see.
+
+**Consequences.** The error says whether the key's passphrase was wrong or missing: ssh logs "Server accepts key" and then "Permission denied". T6.3 confirmed in CI that each OS's OpenSSH runs the helper, Windows' built-in OpenSSH 9.5 included, even with a passphrase full of shell and cmd special characters.
+
+## ADR-43: Tunnel processes are stopped as a tree
+
+**Decision.**
+- On Linux and macOS, ssh and aws are started as the leaders of their own process groups, and the whole group is sent SIGTERM.
+- On Windows, `taskkill /T /F` is used.
+- Every tunnel process is stopped on `disconnect`, on a failed `connect`, on connecting to another profile, and when the server exits (a synchronous `exit` handler, plus SIGINT/SIGTERM and stdin closing).
+
+**Why.** `aws ssm start-session` starts `session-manager-plugin`, which holds the port. Stopping only `aws` would leave the plugin running (roadmap risk "Tunnel processes left running").
+
+**Consequences.** If the server is killed with SIGKILL, no handler runs, so its tunnel processes can be left behind. Nothing short of an external supervisor can prevent that.
+
+## ADR-44: `MCP_DBS_SSH_CONFIG` names an ssh config file
+
+**Decision.** If set, it is passed to ssh as `-F <file>`, in place of `~/.ssh/config`.
+
+**Why.**
+- ssh finds `~/.ssh` from the OS user database, not `$HOME`, so tests could not otherwise give ssh their own known-hosts file and keys without touching the user's.
+- Users who keep a separate ssh config for database bastions can use it too.
+
+## ADR-45: DBeaver SSH tunnels are read the way DBDelve imports them
+
+**Decision.** An enabled `ssh_tunnel` handler is used when it is set up as:
+- `authType` `PUBLIC_KEY`, with `keyPath` if one is given, or
+- `authType` `AGENT`.
+
+It is skipped with a reason when:
+- it logs in with a password (ADR-11)
+- it goes through jump servers (`jumpServer.count`, `jumpServerEnabled`)
+- it has no host
+- its key path is relative. ssh would resolve it against the server's working folder.
+
+The user comes from the connection's `network/ssh_tunnel` credentials, and that entry's `password` is used as the key's passphrase. Other network handlers, such as proxies, are still skipped.
+
+**Why.** It matches DBDelve's importer (`ssh()` in `src/import/dbeaver.rs`), so a connection behaves the same in DBeaver, DBDelve and here.

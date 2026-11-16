@@ -81,17 +81,14 @@ test("skip rules: password_command, service file, run_as, unknown engine, plugin
   assert.match(reason('[[profiles]]\nid = "d"\nengine = "duckdb"\npath = ""'), /no file path/);
 });
 
-test("SSH and SSM tunnels are mapped, then skipped until Phase 6", () => {
-  assert.equal(SUPPORTED_TUNNELS.has("ssh"), false);
-  assert.match(one(pg('[profiles.ssh]\nhost = "bastion"\nidentity_file = "~/.ssh/id_ed25519"')).skipped[0].reason, /SSH tunnels are not supported yet/);
-  const ssm = '[[profiles]]\nid = "s"\nhost = "db.internal"\nuser = "u"\nengine = { ssm = { engine = "mssql" } }\n[profiles.ssm]\ntarget = "i-0123456789abcdef0"\nregion = "eu-west-1"';
-  assert.match(one(ssm).skipped[0].reason, /SSM tunnels are not supported yet/);
+test("SSH and SSM tunnels load now that they are supported; a broken SSM setup is skipped", () => {
+  assert.ok(SUPPORTED_TUNNELS.has("ssh") && SUPPORTED_TUNNELS.has("ssm"));
+  assert.equal(one(pg('[profiles.ssh]\nhost = "bastion"\nidentity_file = "~/.ssh/id_ed25519"')).profiles[0].tunnel.type, "ssh");
   assert.match(one('[[profiles]]\nid = "s"\nhost = "h"\nengine = { ssm = { engine = "postgres" } }').skipped[0].reason, /no \[profiles.ssm\]/);
+  assert.match(one('[[profiles]]\nid = "d"\nengine = "duckdb"\npath = "/x.duckdb"\n[profiles.ssh]\nhost = "b"').skipped[0].reason, /DuckDB file can't be reached through a tunnel/);
 });
 
-test("SSH and SSM tunnel fields map onto the profile model once supported", (t) => {
-  SUPPORTED_TUNNELS.add("ssh").add("ssm");
-  t.after(() => (SUPPORTED_TUNNELS.delete("ssh"), SUPPORTED_TUNNELS.delete("ssm")));
+test("SSH and SSM tunnel fields map onto the profile model", () => {
   const [ssh] = one(pg('[profiles.ssh]\nhost = "bastion"\nport = 2222\nuser = "me"\nidentity_file = "~/.ssh/id_ed25519"')).profiles;
   assert.deepEqual(JSON.parse(JSON.stringify(ssh.tunnel)), {
     type: "ssh", host: "bastion", port: 2222, user: "me", identityFile: "~/.ssh/id_ed25519",
