@@ -77,3 +77,15 @@ test("describeProfile leaves out credentials", () => {
     id: "dbeaver:a", engine: "postgres", source: "dbeaver", host: "h", port: 5432, database: null, tunnel: null, readOnly: false,
   });
 });
+
+test("sources() says where each source read from, or why it failed", async () => {
+  const registry = new Registry([
+    { name: "dbeaver", load: () => ({ location: "/ws", profiles: [pg("a")], skipped: [], errors: ["cannot read x"] }) },
+    { name: "dbdelve", load: () => { throw new Error("boom"); } },
+  ]);
+  assert.deepEqual(await registry.sources(), [
+    { name: "dbeaver", ok: true, location: "/ws", profiles: 1, skipped: 0, errors: 1 },
+    { name: "dbdelve", ok: false, error: "boom" },
+  ]);
+  assert.deepEqual((await registry.list()).errors.map((e) => e.message), ["cannot read x", "boom"]);
+});

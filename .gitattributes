@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# Encrypted; a line-ending conversion would corrupt it.
+test/fixtures/dbeaver/credentials-config.json binary

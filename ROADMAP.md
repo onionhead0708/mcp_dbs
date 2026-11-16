@@ -1,6 +1,6 @@
 # Roadmap: `mcp-dbs`: a multi-engine, multi-source, cross-platform MCP server
 
-Status: **Phases 0 and 1 done (2026-11-16); Phase 2 next.** Decisions are in §2.
+Status: **Phases 0–2 done (2026-11-16; Phase 2 CI not yet run on GitHub); next: the T5.5 and T6.3 spikes, then Phase 3.** Decisions are in §2.
 
 ## 1. Goals
 
@@ -15,6 +15,8 @@ Status: **Phases 0 and 1 done (2026-11-16); Phase 2 next.** Decisions are in §2
 Out of scope for now, but the design must not block them: MySQL/MariaDB, SQLite, and Azure Entra sign-in for SQL Server.
 
 ## 2. Decisions (agreed 2026-11-16)
+
+The reasons and consequences for each decision, plus the decisions made while building (ADR-15 onwards), are in [`docs/ADR.md`](docs/ADR.md). Record new decisions there.
 
 | # | Decision |
 |---|----------|
@@ -31,6 +33,7 @@ Out of scope for now, but the design must not block them: MySQL/MariaDB, SQLite,
 | D11 | DBeaver SSH tunnels log in with **keys only**. A DBeaver tunnel set to password login is skipped with a reason. |
 | D12 | The work happens in a **new folder `../mcp_dbs`** with a **new GitHub repo** (`mcp_dbs`). `mcp_postgresql` is left as it is. |
 | D13 | The `mcp_dbs` GitHub repo is **public**, under your personal account. Nothing personal can be committed: no `.env`, no real hostnames or user paths, no internal connection names (e.g. the example connection names in the README and CLAUDE.md), and no secrets in fixtures. |
+| D14 | On Linux, assume **one DBeaver installation**. The first workspace with connections (native, Flatpak, Snap) is used; they are not merged (ADR-23). |
 
 ## 3. Findings
 
@@ -162,17 +165,19 @@ src/
   *Phase 1 notes:* `src/server.js` holds the tools (index.js is wiring only). The `list_profiles` `engine`/`source` filters and skip reasons from T7.1 are already in; `reload_profiles` is not. DBeaver connections with an enabled non-SSL network handler (e.g. SSH) are skipped until Phase 6. Read-only Postgres sessions also run with `default_transaction_read_only = on`. `list_profiles` now returns JSON instead of one id per line.
 
 ### Phase 2: Cross-platform
-- [ ] T2.1 Auto-detect the DBeaver workspace when the env vars are not set:
+- [x] T2.1 Auto-detect the DBeaver workspace when the env vars are not set:
   - Windows: `%APPDATA%\DBeaverData\workspace6`
   - macOS: `~/Library/DBeaverData/workspace6`
   - Linux: `~/.local/share/DBeaverData/workspace6`, plus Flatpak (`~/.var/app/io.dbeaver.DBeaverCommunity/data/DBeaverData/workspace6`) and Snap (`~/snap/dbeaver-ce/current/.local/share/DBeaverData/workspace6`)
   - Inside the workspace, check `General/.dbeaver/` and every other project's `.dbeaver/`, plus the legacy `.metadata/.plugins/org.jkiss.dbeaver.core/`.
   - The env vars stay as optional overrides.
-- [ ] T2.2 Auto-detect the DBDelve directory, honouring `DBDELVE_VARIANT` (§3.3).
-- [ ] T2.3 Build every path with `path`/`os.homedir()`. The `.env` loader must handle CRLF line endings.
-- [ ] T2.4 Each source is optional. A source that is missing or broken is reported in `status`/`list_profiles` and does not stop the server.
-- [ ] T2.5 Rewrite `.env.example` and the README, with sections for each OS and client configs (Claude Desktop, Claude Code, Kiro).
-- [ ] T2.6 GitHub Actions matrix: ubuntu, macos and windows × Node 20 and 22, running unit tests and a smoke test (start the server, call `tools/list`).
+- [x] T2.2 Auto-detect the DBDelve directory, honouring `DBDELVE_VARIANT` (§3.3).
+- [x] T2.3 Build every path with `path`/`os.homedir()`. The `.env` loader must handle CRLF line endings.
+- [x] T2.4 Each source is optional. A source that is missing or broken is reported in `status`/`list_profiles` and does not stop the server.
+- [x] T2.5 Rewrite `.env.example` and the README, with sections for each OS and client configs (Claude Desktop, Claude Code, Kiro).
+- [x] T2.6 GitHub Actions matrix: ubuntu, macos and windows × Node 20 and 22, running unit tests and a smoke test (start the server, call `tools/list`).
+
+  *Phase 2 notes:* `DBEAVER_WORKSPACE` was added as an override for a whole workspace. On Linux the first workspace candidate that has connections wins (native, Flatpak, Snap); they are not merged (D14). Ids outside DBeaver's `General` project are `dbeaver:<project>:<folder>/<name>`. `locateDbdelve()` is ready and tested, but nothing reads `profiles.toml` until Phase 5. `.gitattributes` marks the encrypted fixture as binary so Windows checkouts can't corrupt it. The workflow has not run yet: it first runs once the branch is pushed.
 
 ### Phase 3: SQL Server
 - [ ] T3.1 Add `mssql` (it uses tedious, which is pure JS, so nothing native to build).
@@ -199,7 +204,7 @@ src/
 - [ ] T5.2 Map engines: `postgres` (or no engine), `mssql`, `duckdb`, and an `{ ssm = { engine } }` table → that engine plus an SSM tunnel. Any other engine → skipped with a reason.
 - [ ] T5.3 Skip rules: `password_command` set (D3), `ssh.run_as` set, `service` (pg service file) set.
 - [ ] T5.4 `secrets/keychain.js` reads the password from service `dbdelve[-variant]`, account = id. It is called **only when `connect` runs**, so `list_profiles` never triggers a keychain prompt. A missing entry gives a clear error.
-- [ ] T5.5 **Spike first:** check on macOS, Windows and Linux (gnome-keyring) that `@napi-rs/keyring` reads entries DBDelve wrote. If this fails, everything else in this phase is blocked.
+- [ ] T5.5 **Spike first:** check on macOS, Windows and Linux (gnome-keyring) that `@napi-rs/keyring` reads entries DBDelve wrote. If this fails, everything else in this phase is blocked. Note: DBDelve uses the Rust `keyring` crate **v4**, `@napi-rs/keyring` wraps **v3**, so Secret Service attributes may differ on Linux. The SSH passphrase service is `dbdelve[-variant]/ssh-passphrase`.
 - [ ] T5.6 Map `sslmode`/`root_certificate`, default ports, empty `database`, `schema` and `mode`.
 - [ ] T5.7 Tests: parsing fixtures with a mocked keychain.
 

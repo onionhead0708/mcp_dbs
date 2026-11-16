@@ -12,6 +12,10 @@ const paths = {
   dataSourcesPath: path.join(fixtures, "data-sources.json"),
   credentialsPath: path.join(fixtures, "credentials-config.json"),
 };
+const fromFiles = ({ dataSourcesPath, credentialsPath }) => () => ({
+  location: dataSourcesPath,
+  projects: [{ project: "General", dataSourcesFiles: [dataSourcesPath], credentialsPath }],
+});
 
 const postgres = (configuration, extra = {}) => ({
   provider: "postgresql",
@@ -28,7 +32,7 @@ test("decrypts the credentials fixture", () => {
 });
 
 test("loads the fixture: Postgres with credentials, everything else skipped with a reason", async () => {
-  const { profiles, skipped } = dbeaverSource(paths).load();
+  const { profiles, skipped } = dbeaverSource(fromFiles(paths)).load();
   assert.deepEqual(profiles.map((p) => p.id).sort(), ["dbeaver:Production/orders-db", "dbeaver:local-postgres"]);
 
   const local = profiles.find((p) => p.id === "dbeaver:local-postgres");
@@ -48,7 +52,7 @@ test("loads the fixture: Postgres with credentials, everything else skipped with
 });
 
 test("the password never shows up when a profile is printed", () => {
-  const { profiles } = dbeaverSource(paths).load();
+  const { profiles } = dbeaverSource(fromFiles(paths)).load();
   const local = profiles.find((p) => p.id === "dbeaver:local-postgres");
   assert.ok(!JSON.stringify(local).includes("test-password"));
   assert.ok(!util.inspect(local, { depth: 10 }).includes("test-password"));
@@ -99,13 +103,31 @@ test("TLS: the SSL tab, then the sslmode property, else unknown", () => {
   assert.equal(tlsFrom({}).mode, null);
 });
 
-test("the source reports what is not configured", () => {
-  assert.throws(() => dbeaverSource(null).load(), /not configured/);
-  assert.throws(() => dbeaverSource({ ...paths, dataSourcesPath: "/nonexistent/x.json" }).load(), /cannot read/);
+test("the source passes on why DBeaver was not found", () => {
+  const notFound = () => { throw new Error("no DBeaver connections found"); };
+  assert.throws(() => dbeaverSource(notFound).load(), /no DBeaver connections found/);
+  assert.throws(() => dbeaverSource(fromFiles({ ...paths, dataSourcesPath: "/nonexistent/x.json" })).load(), /cannot read/);
+});
+
+test("a broken file is reported and the other projects still load", () => {
+  const result = dbeaverSource(() => ({
+    location: "ws",
+    projects: [
+      { project: "General", dataSourcesFiles: [paths.dataSourcesPath], credentialsPath: paths.credentialsPath },
+      { project: "Work", dataSourcesFiles: ["/nonexistent/data-sources.json"], credentialsPath: "/nonexistent/c.json" },
+    ],
+  })).load();
+  assert.equal(result.profiles.length, 2);
+  assert.match(result.errors[0], /cannot read \/nonexistent/);
+});
+
+test("ids outside the General project start with the project name", () => {
+  const { profiles } = mapDbeaver({ connections: { c: postgres({}, { folder: "Prod" }) } }, creds, { project: "Work" });
+  assert.equal(profiles[0].id, "dbeaver:Work:Prod/db");
 });
 
 test("a missing credentials file means no saved passwords", () => {
-  const { profiles, skipped } = dbeaverSource({ ...paths, credentialsPath: "/nonexistent/c.json" }).load();
+  const { profiles, skipped } = dbeaverSource(fromFiles({ ...paths, credentialsPath: "/nonexistent/c.json" })).load();
   assert.equal(profiles.length, 0);
   assert.ok(skipped.some((s) => s.id === "dbeaver:local-postgres" && /no saved user/.test(s.reason)));
 });

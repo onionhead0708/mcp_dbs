@@ -7,7 +7,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 // stdout carries MCP messages only; send any stray logging to stderr.
 console.log = console.error;
 
-const { loadEnvFile, dbeaverPaths } = await import("./src/config.js");
+const { loadEnvFile } = await import("./src/config.js");
 const { Registry } = await import("./src/profiles/registry.js");
 const { dbeaverSource } = await import("./src/profiles/sources/dbeaver.js");
 const { Session } = await import("./src/session.js");
@@ -15,7 +15,7 @@ const { createServer } = await import("./src/server.js");
 
 loadEnvFile(path.join(path.dirname(fileURLToPath(import.meta.url)), ".env"));
 
-const registry = new Registry([dbeaverSource(dbeaverPaths())]);
+const registry = new Registry([dbeaverSource()]);
 const session = new Session();
 
 // Close the connection (and later the tunnel) whenever we stop.

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { makeProfile } from "../model.js";
 import { inlineSecret } from "../../secrets/index.js";
+import { locateDbeaver } from "../../config.js";
 
 // DBeaver's fixed key. The file is AES-128-CBC, with the IV in the first 16 bytes.
 const KEY = Buffer.from("babb4a9f774ab853c96c2d653dfe544a", "hex");
@@ -71,14 +72,17 @@ export function tlsFrom(configuration) {
 
 /**
  * Maps parsed data-sources.json + credentials into profiles. Connections we
- * cannot use are returned in `skipped` with the reason.
+ * cannot use are returned in `skipped` with the reason. Ids are
+ * `<folder>/<name>`; outside the General project they start with
+ * `<project>:`, so two projects can hold the same name.
  */
-export function mapDbeaver(dataSources, credentials) {
+export function mapDbeaver(dataSources, credentials, { project = "General" } = {}) {
   const profiles = [];
   const skipped = [];
+  const prefix = project === "General" ? "" : `${project}:`;
 
   for (const [key, conn] of Object.entries(dataSources.connections ?? {})) {
-    const localId = conn.folder ? `${conn.folder}/${conn.name}` : conn.name ?? key;
+    const localId = prefix + (conn.folder ? `${conn.folder}/${conn.name}` : conn.name ?? key);
     const skip = (reason) => skipped.push({ id: `dbeaver:${localId}`, source: "dbeaver", reason });
 
     // A connection made from a template names the real database in original-*.
@@ -131,34 +135,56 @@ export function mapDbeaver(dataSources, credentials) {
   return { profiles, skipped };
 }
 
-/** The DBeaver profile source, reading the two files on each load. */
-export function dbeaverSource(paths) {
+function readProject({ project, dataSourcesFiles, credentialsPath }) {
+  const profiles = [];
+  const skipped = [];
+  const errors = [];
+
+  // A missing credentials file just means nothing has a saved password.
+  let credentials = {};
+  if (fs.existsSync(credentialsPath)) {
+    try {
+      credentials = decryptCredentials(fs.readFileSync(credentialsPath));
+    } catch (error) {
+      errors.push(`cannot decrypt ${credentialsPath}: ${error.message}`);
+    }
+  }
+  for (const file of dataSourcesFiles) {
+    let dataSources;
+    try {
+      dataSources = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch (error) {
+      errors.push(`cannot read ${file}: ${error.message}`);
+      continue;
+    }
+    const mapped = mapDbeaver(dataSources, credentials, { project });
+    profiles.push(...mapped.profiles);
+    skipped.push(...mapped.skipped);
+  }
+  return { profiles, skipped, errors };
+}
+
+/**
+ * The DBeaver profile source. Files are found and read again on each load,
+ * so `reload` picks up new connections. A broken project or file is reported
+ * and the rest still load; nothing usable at all is an error.
+ */
+export function dbeaverSource(locate = () => locateDbeaver()) {
   return {
     name: "dbeaver",
     load() {
-      if (!paths) {
-        throw new Error("not configured: set DBEAVER_DATA_SOURCES_JSON and DBEAVER_CREDENTIALS_CONFIG_JSON");
+      const { location, projects } = locate();
+      const result = { location, profiles: [], skipped: [], errors: [] };
+      for (const project of projects) {
+        const { profiles, skipped, errors } = readProject(project);
+        result.profiles.push(...profiles);
+        result.skipped.push(...skipped);
+        result.errors.push(...errors);
       }
-      const { dataSourcesPath, credentialsPath } = paths;
-      if (!dataSourcesPath) throw new Error("DBEAVER_DATA_SOURCES_JSON is not set");
-      if (!credentialsPath) throw new Error("DBEAVER_CREDENTIALS_CONFIG_JSON is not set");
-
-      let dataSources;
-      try {
-        dataSources = JSON.parse(fs.readFileSync(dataSourcesPath, "utf8"));
-      } catch (error) {
-        throw new Error(`cannot read data-sources.json at ${dataSourcesPath}: ${error.message}`);
+      if (!result.profiles.length && !result.skipped.length && result.errors.length) {
+        throw new Error(result.errors.join("; "));
       }
-      let credentials = {};
-      if (fs.existsSync(credentialsPath)) {
-        try {
-          credentials = decryptCredentials(fs.readFileSync(credentialsPath));
-        } catch (error) {
-          throw new Error(`cannot decrypt credentials-config.json at ${credentialsPath}: ${error.message}`);
-        }
-      }
-      // A missing credentials file just means nothing has a saved password.
-      return mapDbeaver(dataSources, credentials);
+      return result;
     },
   };
 }

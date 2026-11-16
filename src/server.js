@@ -12,7 +12,7 @@ export const TOOLS = [
   {
     name: "list_profiles",
     description:
-      "List the database connection profiles loaded from DBeaver, with their engine and source. " +
+      "List the database connection profiles found in DBeaver, with their engine and source. " +
       "Connections that cannot be used are listed under `skipped` with the reason.",
     inputSchema: {
       type: "object",
@@ -61,7 +61,7 @@ export const TOOLS = [
   },
   {
     name: "status",
-    description: "Show the current connection: profile, engine, server version and tunnel.",
+    description: "Show the current connection (profile, engine, server version, tunnel) and where each profile source was read from, or why it failed.",
     inputSchema: { type: "object", properties: {} },
   },
 ];
@@ -136,7 +136,7 @@ export function createHandlers({ registry, session }) {
     },
 
     async status() {
-      return json(await session.status());
+      return json({ ...(await session.status()), sources: await registry.sources() });
     },
   };
 }

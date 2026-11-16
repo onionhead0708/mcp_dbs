@@ -95,7 +95,9 @@ test("a failed connect closes the tunnel and leaves no connection", async () => 
   const result = await handlers.connect({ profile_id: "rw" });
   assert.match(textOf(result), /Connection failed: refused/);
   assert.ok(log.includes("tunnel closed dbeaver:rw"));
-  assert.deepEqual(JSON.parse(textOf(await handlers.status())), { connected: false });
+  const status = JSON.parse(textOf(await handlers.status()));
+  assert.equal(status.connected, false);
+  assert.deepEqual(status.sources, [{ name: "dbeaver", ok: true, location: null, profiles: 2, skipped: 0 }]);
 });
 
 test("status and disconnect", async () => {

@@ -1,6 +1,7 @@
 // Merges the profile sources. Each source is { name, load() } where load()
-// returns { profiles, skipped } (it may be async). A source that throws is
-// reported in `errors` and does not stop the others.
+// returns { profiles, skipped, location?, errors?: string[] } (it may be
+// async). A source that throws is reported in `errors` and does not stop the
+// others; so are the partial errors a source returns.
 
 export class Registry {
   #sources;
@@ -26,14 +27,25 @@ export class Registry {
     const byId = new Map();
     const skipped = [];
     const errors = [];
+    const sources = [];
     for (const source of this.#sources) {
       let result;
       try {
         result = await source.load();
       } catch (error) {
         errors.push({ source: source.name, message: error.message });
+        sources.push({ name: source.name, ok: false, error: error.message });
         continue;
       }
+      for (const message of result.errors ?? []) errors.push({ source: source.name, message });
+      sources.push({
+        name: source.name,
+        ok: true,
+        location: result.location ?? null,
+        profiles: result.profiles.length,
+        skipped: result.skipped.length,
+        ...(result.errors?.length ? { errors: result.errors.length } : {}),
+      });
       for (const profile of result.profiles) {
         if (byId.has(profile.id)) {
           skipped.push({ id: profile.id, source: profile.source, reason: "another profile has the same id" });
@@ -44,7 +56,12 @@ export class Registry {
       skipped.push(...result.skipped);
     }
     const profiles = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id, "en"));
-    return { profiles, skipped, errors };
+    return { profiles, skipped, errors, sources };
+  }
+
+  /** One line per source: where it read from, how many profiles, or its error. */
+  async sources() {
+    return (await this.load()).sources;
   }
 
   /** Profiles, optionally filtered by engine and/or source. */
