@@ -1,6 +1,6 @@
 # Roadmap: `mcp-dbs`: a multi-engine, multi-source, cross-platform MCP server
 
-Status: **Phases 0–2 done (2026-11-16; Phase 2 CI not yet run on GitHub); next: the T5.5 and T6.3 spikes, then Phase 3.** Decisions are in §2.
+Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux passed, macOS pending. Next: T6.3, then Phase 3.** Decisions are in §2.
 
 ## 1. Goals
 
@@ -177,7 +177,7 @@ src/
 - [x] T2.5 Rewrite `.env.example` and the README, with sections for each OS and client configs (Claude Desktop, Claude Code, Kiro).
 - [x] T2.6 GitHub Actions matrix: ubuntu, macos and windows × Node 20 and 22, running unit tests and a smoke test (start the server, call `tools/list`).
 
-  *Phase 2 notes:* `DBEAVER_WORKSPACE` was added as an override for a whole workspace. On Linux the first workspace candidate that has connections wins (native, Flatpak, Snap); they are not merged (D14). Ids outside DBeaver's `General` project are `dbeaver:<project>:<folder>/<name>`. `locateDbdelve()` is ready and tested, but nothing reads `profiles.toml` until Phase 5. `.gitattributes` marks the encrypted fixture as binary so Windows checkouts can't corrupt it. The workflow has not run yet: it first runs once the branch is pushed.
+  *Phase 2 notes:* `DBEAVER_WORKSPACE` was added as an override for a whole workspace. On Linux the first workspace candidate that has connections wins (native, Flatpak, Snap); they are not merged (D14). Ids outside DBeaver's `General` project are `dbeaver:<project>:<folder>/<name>`. `locateDbdelve()` is ready and tested, but nothing reads `profiles.toml` until Phase 5. `.gitattributes` marks the encrypted fixture as binary so Windows checkouts can't corrupt it. CI passed on all 6 jobs (PR #1).
 
 ### Phase 3: SQL Server
 - [ ] T3.1 Add `mssql` (it uses tedious, which is pure JS, so nothing native to build).
@@ -205,6 +205,8 @@ src/
 - [ ] T5.3 Skip rules: `password_command` set (D3), `ssh.run_as` set, `service` (pg service file) set.
 - [ ] T5.4 `secrets/keychain.js` reads the password from service `dbdelve[-variant]`, account = id. It is called **only when `connect` runs**, so `list_profiles` never triggers a keychain prompt. A missing entry gives a clear error.
 - [ ] T5.5 **Spike first:** check on macOS, Windows and Linux (gnome-keyring) that `@napi-rs/keyring` reads entries DBDelve wrote. If this fails, everything else in this phase is blocked. Note: DBDelve uses the Rust `keyring` crate **v4**, `@napi-rs/keyring` wraps **v3**, so Secret Service attributes may differ on Linux. The SSH passphrase service is `dbdelve[-variant]/ssh-passphrase`.
+  - Run `node scripts/spike-keychain.js` on each OS. It reads every DBDelve profile's password, never prints a secret, and shows what the OS itself stores when a read misses.
+  - **Linux: passed (2026-11-16, Secret Service).** Entries written by `keyring` 4.2.0 exactly as DBDelve writes them, read back by `@napi-rs/keyring` 2.1.2 in both directions, including the `…/ssh-passphrase` service. Still to check: Linux with real DBDelve entries, **macOS**, and Windows.
 - [ ] T5.6 Map `sslmode`/`root_certificate`, default ports, empty `database`, `schema` and `mode`.
 - [ ] T5.7 Tests: parsing fixtures with a mocked keychain.
 
