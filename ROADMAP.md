@@ -1,6 +1,6 @@
 # Roadmap: `mcp-dbs`: a multi-engine, multi-source, cross-platform MCP server
 
-Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Phase 3 (SQL Server) done except T3.8, which moved to Phase 5.** Decisions are in §2.
+Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Phases 3 (SQL Server) and 4 (DuckDB) done, except T3.8/T4.5's DBDelve mapping, which moved to Phase 5. Next: Phase 5.** Decisions are in §2.
 
 ## 1. Goals
 
@@ -193,13 +193,15 @@ src/
   *Phase 3 notes:* read-only `query` runs in a rolled-back transaction (ADR-28). TLS with no settings means verify-full (ADR-29). One pooled connection with batches and no request timeout; decimals come back as JS numbers (ADR-30). Several result sets come back as an array of arrays (ADR-31). The integration test is `test/mssql.integration.test.js`, which runs only when `MSSQL_TEST_PASSWORD` is set; CI has an `mssql` job on Linux.
 
 ### Phase 4: DuckDB
-- [ ] T4.1 Add `@duckdb/node-api` as an **optional dependency** and load it lazily, so the server still runs on a platform without a prebuilt binary.
-- [ ] T4.2 `drivers/duckdb.js`: open `path` read-write, or read-only when the profile says so (`access_mode`). Apply `schema` with `USE`. `execute` runs several statements.
-- [ ] T4.3 Convert values: BIGINT/HUGEINT → string, DECIMAL, DATE/TIMESTAMP, LIST/STRUCT/MAP → JSON.
-- [ ] T4.4 Lock conflicts: DuckDB allows one process to write a file. If DBDelve or DBeaver has the file open, return a clear error that says which file and why. The connection is closed on `disconnect` and when the server exits, so the lock is released.
-- [ ] T4.5 DBDelve: `engine = "duckdb"`, `path`. Expand `~`, and refuse a file that does not exist rather than silently creating an empty database.
-- [ ] T4.6 DBeaver DuckDB mapping: `provider: "duckdb"` → `path` from `configuration.database` (or remove the `jdbc:duckdb:` prefix from `url`). No credentials are required. `read-only` comes from `configuration["read-only"]`. An empty path or `:memory:` → skipped (an in-memory database has nothing to share).
-- [ ] T4.7 Tests using a temporary DuckDB file.
+- [x] T4.1 Add `@duckdb/node-api` as an **optional dependency** and load it lazily, so the server still runs on a platform without a prebuilt binary.
+- [x] T4.2 `drivers/duckdb.js`: open `path` read-write, or read-only when the profile says so (`access_mode`). Apply `schema` with `USE`. `execute` runs several statements.
+- [x] T4.3 Convert values: BIGINT/HUGEINT → string, DECIMAL, DATE/TIMESTAMP, LIST/STRUCT/MAP → JSON.
+- [x] T4.4 Lock conflicts: DuckDB allows one process to write a file. If DBDelve or DBeaver has the file open, return a clear error that says which file and why. The connection is closed on `disconnect` and when the server exits, so the lock is released.
+- [ ] T4.5 DBDelve: `engine = "duckdb"`, `path`. Expand `~`, and refuse a file that does not exist rather than silently creating an empty database. *(The driver already expands `~` and refuses a missing file, for every source (ADR-35). Mapping DBDelve's `engine = "duckdb"` moves into T5.2, like T3.8.)*
+- [x] T4.6 DBeaver DuckDB mapping: `provider: "duckdb"` → `path` from `configuration.database` (or remove the `jdbc:duckdb:` prefix from `url`). No credentials are required. `read-only` comes from `configuration["read-only"]`. An empty path or `:memory:` → skipped (an in-memory database has nothing to share).
+- [x] T4.7 Tests using a temporary DuckDB file.
+
+  *Phase 4 notes:* `@duckdb/node-api` 2.0.0-r.1 is the same DuckDB (2.0.0) that DBDelve uses (ADR-33). Values come from DuckDB's own JSON conversion, so they are exact (ADR-34). The lock test holds the file open from a second process, as DBDelve would.
 
 ### Phase 5: DBDelve source + keychain
 - [ ] T5.1 Parse `profiles.toml` with `smol-toml`. Read only `[[profiles]]` and ignore unknown fields.

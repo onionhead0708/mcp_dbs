@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import util from "node:util";
 import { fileURLToPath } from "node:url";
-import { decryptCredentials, mapDbeaver, tlsFrom, mssqlTlsFrom, dbeaverSource } from "../src/profiles/sources/dbeaver.js";
+import { decryptCredentials, mapDbeaver, tlsFrom, mssqlTlsFrom, duckdbPath, dbeaverSource } from "../src/profiles/sources/dbeaver.js";
 import { resolveSecret } from "../src/secrets/index.js";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "dbeaver");
@@ -31,9 +31,19 @@ test("decrypts the credentials fixture", () => {
   assert.equal(credentials["postgres-jdbc-local-1"]["#connection"].user, "tester");
 });
 
-test("loads the fixture: Postgres and SQL Server with credentials, the rest skipped with a reason", async () => {
+test("loads the fixture: Postgres and SQL Server with credentials, DuckDB, the rest skipped with a reason", async () => {
   const { profiles, skipped } = dbeaverSource(fromFiles(paths)).load();
-  assert.deepEqual(profiles.map((p) => p.id).sort(), ["dbeaver:Production/orders-db", "dbeaver:local-postgres", "dbeaver:local-sqlserver"]);
+  assert.deepEqual(profiles.map((p) => p.id).sort(), [
+    "dbeaver:DuckDB@/home/user/data/test.duckdb",
+    "dbeaver:Production/orders-db",
+    "dbeaver:local-postgres",
+    "dbeaver:local-sqlserver",
+  ]);
+
+  // The DuckDB name contains "/" and must survive as one id.
+  const duck = profiles.find((p) => p.engine === "duckdb");
+  assert.equal(duck.path, "/home/user/data/test.duckdb");
+  assert.equal(duck.auth, null);
 
   const mssql = profiles.find((p) => p.id === "dbeaver:local-sqlserver");
   assert.equal(mssql.engine, "mssql");
@@ -51,8 +61,6 @@ test("loads the fixture: Postgres and SQL Server with credentials, the rest skip
 
   const reasons = Object.fromEntries(skipped.map((s) => [s.id, s.reason]));
   assert.match(reasons["dbeaver:no-saved-password"], /no saved user/);
-  // The DuckDB name contains "/" and must survive as one id.
-  assert.match(reasons["dbeaver:DuckDB@/home/user/data/test.duckdb"], /DuckDB/);
   assert.match(reasons["dbeaver:DBeaver Sample Database (SQLite)"], /sqlite/);
 });
 
@@ -122,7 +130,7 @@ test("a broken file is reported and the other projects still load", () => {
       { project: "Work", dataSourcesFiles: ["/nonexistent/data-sources.json"], credentialsPath: "/nonexistent/c.json" },
     ],
   })).load();
-  assert.equal(result.profiles.length, 3);
+  assert.equal(result.profiles.length, 4);
   assert.match(result.errors[0], /cannot read \/nonexistent/);
 });
 
@@ -133,7 +141,7 @@ test("ids outside the General project start with the project name", () => {
 
 test("a missing credentials file means no saved passwords", () => {
   const { profiles, skipped } = dbeaverSource(fromFiles({ ...paths, credentialsPath: "/nonexistent/c.json" })).load();
-  assert.equal(profiles.length, 0);
+  assert.deepEqual(profiles.map((p) => p.engine), ["duckdb"], "DuckDB needs no credentials");
   assert.ok(skipped.some((s) => s.id === "dbeaver:local-postgres" && /no saved user/.test(s.reason)));
 });
 
@@ -168,4 +176,19 @@ test("SQL Server TLS: encrypt, trust-server-certificate, the SSL tab, else verif
   assert.equal(tls({ properties: { encrypt: "false" } }).mode, "disable");
   assert.equal(tls({ properties: { Encrypt: "optional" } }).mode, "disable");
   assert.equal(tls({ properties: { sslmode: "verify-ca" } }).mode, "verify-ca");
+});
+
+test("DuckDB: path from database or the JDBC URL; in-memory is skipped; read-only kept", () => {
+  assert.equal(duckdbPath({ database: "/data/a.duckdb" }), "/data/a.duckdb");
+  assert.equal(duckdbPath({ url: "jdbc:duckdb:/data/b.duckdb?access_mode=read_only" }), "/data/b.duckdb");
+  assert.equal(duckdbPath({ url: "jdbc:duckdb:" }), null);
+  assert.equal(duckdbPath({ database: ":memory:" }), null);
+  assert.equal(duckdbPath({ url: "jdbc:duckdb::memory:x" }), null);
+
+  const duck = (configuration) => ({ provider: "duckdb", driver: "duckdb_jdbc", name: "d", configuration });
+  assert.match(one(duck({ database: ":memory:" }), {}).skipped[0].reason, /in-memory/);
+  const [ro] = one(duck({ database: "/data/a.duckdb", "read-only": true }), {}).profiles;
+  assert.equal(ro.readOnly, true);
+  // A DuckDB connection made from a template still counts.
+  assert.equal(one({ ...duck({ database: "/x.duckdb" }), provider: "generic", "original-provider": "duckdb" }, {}).profiles[0].engine, "duckdb");
 });

@@ -73,12 +73,17 @@ test("lists the tools", async () => {
   assert.deepEqual(tools.map((t) => t.name).sort(), ["connect", "disconnect", "execute", "list_profiles", "query", "status"]);
 });
 
-test("loads PostgreSQL and SQL Server profiles from the DBeaver fixtures", async () => {
+test("loads PostgreSQL, SQL Server and DuckDB profiles from the DBeaver fixtures", async () => {
   const result = await request("tools/call", { name: "list_profiles", arguments: {} });
   assert.ok(!result.isError, result.content?.[0]?.text);
   const { profiles, skipped, errors } = JSON.parse(result.content[0].text);
-  // PostgreSQL and SQL Server with saved credentials; DuckDB comes later.
-  assert.deepEqual(profiles.map((p) => p.id).sort(), ["dbeaver:Production/orders-db", "dbeaver:local-postgres", "dbeaver:local-sqlserver"]);
+  // PostgreSQL and SQL Server with saved credentials, and DuckDB (which needs none).
+  assert.deepEqual(profiles.map((p) => p.id).sort(), [
+    "dbeaver:DuckDB@/home/user/data/test.duckdb",
+    "dbeaver:Production/orders-db",
+    "dbeaver:local-postgres",
+    "dbeaver:local-sqlserver",
+  ]);
   assert.ok(skipped.length > 0);
   assert.deepEqual(errors, []);
   assert.ok(!result.content[0].text.includes("test-password"));

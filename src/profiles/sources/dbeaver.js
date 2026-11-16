@@ -27,7 +27,7 @@ function engineFor(provider, driver = "") {
       if (/jtds/i.test(driver)) return { reason: "the jTDS driver is not supported; switch the connection to Microsoft's driver" };
       return { engine: "mssql" };
     case "duckdb":
-      return { reason: "DuckDB is not supported yet" };
+      return { engine: "duckdb" };
     default:
       return { reason: `provider '${provider}' is not supported` };
   }
@@ -100,6 +100,21 @@ export function mssqlTlsFrom(configuration) {
   return { mode, rootCert: base.rootCert, trustServerCert };
 }
 
+/**
+ * A DuckDB connection's file: `configuration.database`, else the JDBC URL
+ * without `jdbc:duckdb:` and its `?options`. Null for an in-memory database,
+ * which has nothing to share between programs (T4.6).
+ */
+export function duckdbPath(configuration) {
+  let file = text(configuration.database);
+  if (!file) {
+    const url = text(configuration.url);
+    if (url?.toLowerCase().startsWith("jdbc:duckdb:")) file = url.slice("jdbc:duckdb:".length).split("?")[0] || null;
+  }
+  if (!file || file === ":memory:" || file.startsWith(":memory:")) return null;
+  return file;
+}
+
 /** Why a SQL Server connection's sign-in can't be used, or null (ADR-5). */
 function mssqlAuthProblem(configuration) {
   const model = configuration["auth-model"];
@@ -133,6 +148,19 @@ export function mapDbeaver(dataSources, credentials, { project = "General" } = {
     const configuration = conn.configuration;
     if (!configuration) {
       skip("connection has no configuration");
+      continue;
+    }
+
+    if (engine === "duckdb") {
+      // A local file: no host, no credentials, no network handlers.
+      const file = duckdbPath(configuration);
+      if (!file) {
+        skip("in-memory DuckDB database: nothing to connect to");
+        continue;
+      }
+      profiles.push(
+        makeProfile({ source: "dbeaver", localId, engine, name: conn.name, folder: conn.folder ?? null, path: file, readOnly: isTrue(configuration["read-only"]) })
+      );
       continue;
     }
 

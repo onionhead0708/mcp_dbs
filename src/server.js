@@ -12,7 +12,7 @@ export const TOOLS = [
   {
     name: "list_profiles",
     description:
-      "List the database connection profiles (PostgreSQL, SQL Server) found in DBeaver, with their engine and source. " +
+      "List the database connection profiles (PostgreSQL, SQL Server, DuckDB) found in DBeaver, with their engine and source. " +
       "Connections that cannot be used are listed under `skipped` with the reason.",
     inputSchema: {
       type: "object",
@@ -59,7 +59,7 @@ export const TOOLS = [
   },
   {
     name: "disconnect",
-    description: "Close the current database connection.",
+    description: "Close the current database connection. For DuckDB this releases the file so other programs can open it.",
     inputSchema: { type: "object", properties: {} },
   },
   {

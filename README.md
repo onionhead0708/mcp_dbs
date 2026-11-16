@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that lets MCP clients (Claude, Kiro, …) 
 >
 > | | Today | Planned |
 > |---|---|---|
-> | Engines | PostgreSQL, SQL Server | DuckDB |
+> | Engines | PostgreSQL, SQL Server, DuckDB | |
 > | Profile sources | DBeaver | DBDelve |
 > | Platforms | Linux, macOS, Windows (DBeaver found automatically) | |
 > | Tunnels | none | SSH, AWS SSM |
@@ -14,7 +14,7 @@ A Model Context Protocol (MCP) server that lets MCP clients (Claude, Kiro, …) 
 ## Prerequisites
 
 - Node.js 20 or later
-- DBeaver, with PostgreSQL or SQL Server connections configured and their passwords saved
+- DBeaver, with PostgreSQL or SQL Server connections configured and their passwords saved, or DuckDB files
 - Linux, macOS or Windows
 
 ## Installation
@@ -103,6 +103,14 @@ Connections that can't be used (no saved password, an engine not supported yet, 
 - TLS follows the connection's `encrypt` and "Trust server certificate" settings. With neither set, the certificate is verified, as Microsoft's driver does.
 - `host\INSTANCE` with no port finds a named instance through SQL Server Browser.
 - DECIMAL and MONEY come back as JSON numbers, so very long values lose precision. `CAST` them to `varchar` if you need them exact.
+
+### DuckDB
+
+- DuckDB connections are local database files, opened read-write, or read-only when the connection is marked read-only.
+- DuckDB lets only one program write to a file at a time. If DBDelve or DBeaver has it open, `connect` says so; disconnect there first. Use `disconnect` here when you're done, so the other program can open it again.
+- A path that doesn't exist is refused rather than creating an empty database. In-memory DuckDB connections are skipped.
+- Values are exact: big integers and decimals come back as strings, and timestamps keep their microseconds.
+- DuckDB support is an optional native package, with prebuilt binaries for Linux, macOS and Windows on x64 and arm64. If it can't be installed, everything else still works.
 
 ## Tools
 
