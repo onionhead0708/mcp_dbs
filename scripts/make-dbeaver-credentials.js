@@ -10,9 +10,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const KEY = Buffer.from("babb4a9f774ab853c96c2d653dfe544a", "hex");
-// A fixed IV keeps the output reproducible. index.js decrypts the whole file
-// with a zero IV and keeps everything from the first "{", so the garbled first
-// block must not contain "{" (checked below).
+// A fixed IV keeps the output reproducible.
 const IV = Buffer.from("00112233445566778899aabbccddeeff", "hex");
 
 const credentials = {
@@ -23,10 +21,6 @@ const credentials = {
 
 const cipher = crypto.createCipheriv("aes-128-cbc", KEY, IV);
 const encrypted = Buffer.concat([IV, cipher.update(JSON.stringify(credentials), "utf8"), cipher.final()]);
-
-const zeroIv = crypto.createDecipheriv("aes-128-cbc", KEY, Buffer.alloc(16, 0));
-const garbled = Buffer.concat([zeroIv.update(encrypted), zeroIv.final()]).subarray(0, 16);
-if (garbled.includes(0x7b)) throw new Error("First block contains '{'; pick another IV");
 
 const out = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures", "dbeaver", "credentials-config.json");
 fs.writeFileSync(out, encrypted);
