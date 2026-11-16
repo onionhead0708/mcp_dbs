@@ -12,7 +12,7 @@ export const TOOLS = [
   {
     name: "list_profiles",
     description:
-      "List the database connection profiles found in DBeaver, with their engine and source. " +
+      "List the database connection profiles (PostgreSQL, SQL Server) found in DBeaver, with their engine and source. " +
       "Connections that cannot be used are listed under `skipped` with the reason.",
     inputSchema: {
       type: "object",
@@ -33,7 +33,9 @@ export const TOOLS = [
   },
   {
     name: "query",
-    description: "Run a SQL query on the connected database and return the rows as JSON.",
+    description:
+      "Run a SQL query on the connected database and return the rows as JSON. " +
+      "When a SQL Server batch returns several result sets, they come back as an array of arrays.",
     inputSchema: {
       type: "object",
       properties: {
@@ -47,6 +49,7 @@ export const TOOLS = [
     name: "execute",
     description:
       "Execute one or more DDL/DML SQL statements (CREATE, DROP, ALTER, INSERT, UPDATE, DELETE, DO blocks). " +
+      "On SQL Server, the script is split into batches on GO lines. " +
       "Returns the affected row count. Refused on read-only profiles.",
     inputSchema: {
       type: "object",
@@ -105,11 +108,21 @@ export function createHandlers({ registry, session }) {
         return fail("`max_rows` must be a positive integer");
       }
       try {
-        const { rows } = await session.query(requireSql(args));
-        const result = formatRows(rows, maxRows);
-        const content = [{ type: "text", text: result.text }];
-        if (result.truncated) {
-          content.push({ type: "text", text: `Showing the first ${result.shown} of ${result.total} rows.` });
+        const result = await session.query(requireSql(args));
+        if (result.resultSets) {
+          // Several result sets (SQL Server): one JSON array of sets, cut one by one.
+          const sets = result.resultSets.map((rows) => formatRows(rows, maxRows));
+          const content = [{ type: "text", text: `[\n${sets.map((set) => set.text).join(",\n")}\n]` }];
+          const notes = sets
+            .map((set, i) => (set.truncated ? `result set ${i + 1}: first ${set.shown} of ${set.total} rows` : null))
+            .filter(Boolean);
+          if (notes.length) content.push({ type: "text", text: `Showing ${notes.join("; ")}.` });
+          return { content };
+        }
+        const rows = formatRows(result.rows, maxRows);
+        const content = [{ type: "text", text: rows.text }];
+        if (rows.truncated) {
+          content.push({ type: "text", text: `Showing the first ${rows.shown} of ${rows.total} rows.` });
         }
         return { content };
       } catch (error) {

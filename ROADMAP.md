@@ -1,6 +1,6 @@
 # Roadmap: `mcp-dbs`: a multi-engine, multi-source, cross-platform MCP server
 
-Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Phase 3 (SQL Server) in progress.** Decisions are in §2.
+Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Phase 3 (SQL Server) done except T3.8, which moved to Phase 5.** Decisions are in §2.
 
 ## 1. Goals
 
@@ -180,15 +180,17 @@ src/
   *Phase 2 notes:* `DBEAVER_WORKSPACE` was added as an override for a whole workspace. On Linux the first workspace candidate that has connections wins (native, Flatpak, Snap); they are not merged (D14). Ids outside DBeaver's `General` project are `dbeaver:<project>:<folder>/<name>`. `locateDbdelve()` is ready and tested, but nothing reads `profiles.toml` until Phase 5. `.gitattributes` marks the encrypted fixture as binary so Windows checkouts can't corrupt it. CI passed on all 6 jobs (PR #1).
 
 ### Phase 3: SQL Server
-- [ ] T3.1 Add `mssql` (it uses tedious, which is pure JS, so nothing native to build).
-- [ ] T3.2 `drivers/mssql.js`: a pool of size 1. `query` returns the recordset(s). `execute` returns rowsAffected for each batch.
-- [ ] T3.3 `drivers/mssql-auth.js`: an auth-strategy interface with `sql` (user/password) implemented now. Leave a stub where `entra-*` will plug in later, so it maps onto tedious `authentication.type` (D5).
-- [ ] T3.4 `sql/split-go.js`: treat `GO` (optionally followed by a count) as a separator only when it is alone on its line, and never inside strings or comments. Each batch runs in order (D6). Unit-test it.
-- [ ] T3.5 Map TLS: `disable` → `encrypt:false`; `prefer`/`require` → `encrypt:true, trustServerCertificate:true`; `verify-*` → `encrypt:true, trustServerCertificate:false`, plus the CA when given. DBeaver's `sslTrustServerCertificate`/`trustServerCertificate`/`encrypt` take priority.
-- [ ] T3.6 Defaults: port 1433 when missing. When `database` is empty, don't send a database name. `host\INSTANCE` is supported when no port is given.
-- [ ] T3.7 DBeaver: `provider` `sqlserver` (and `mssql` except the Sybase drivers), `auth-model: sqlserver_database`. Any other auth-model → skipped with a reason. jTDS → skipped.
-- [ ] T3.8 DBDelve: `engine = "mssql"`.
-- [ ] T3.9 Integration test against the `mcr.microsoft.com/mssql/server` Docker image, run in CI on Linux only.
+- [x] T3.1 Add `mssql` (it uses tedious, which is pure JS, so nothing native to build).
+- [x] T3.2 `drivers/mssql.js`: a pool of size 1. `query` returns the recordset(s). `execute` returns rowsAffected for each batch.
+- [x] T3.3 `drivers/mssql-auth.js`: an auth-strategy interface with `sql` (user/password) implemented now. Leave a stub where `entra-*` will plug in later, so it maps onto tedious `authentication.type` (D5).
+- [x] T3.4 `sql/split-go.js`: treat `GO` (optionally followed by a count) as a separator only when it is alone on its line, and never inside strings or comments. Each batch runs in order (D6). Unit-test it.
+- [x] T3.5 Map TLS: `disable` → `encrypt:false`; `prefer`/`require` → `encrypt:true, trustServerCertificate:true`; `verify-*` → `encrypt:true, trustServerCertificate:false`, plus the CA when given. DBeaver's `sslTrustServerCertificate`/`trustServerCertificate`/`encrypt` take priority.
+- [x] T3.6 Defaults: port 1433 when missing. When `database` is empty, don't send a database name. `host\INSTANCE` is supported when no port is given.
+- [x] T3.7 DBeaver: `provider` `sqlserver` (and `mssql` except the Sybase drivers), `auth-model: sqlserver_database`. Any other auth-model → skipped with a reason. jTDS → skipped.
+- [ ] T3.8 DBDelve: `engine = "mssql"`. *(Moved into T5.2, because the DBDelve source arrives in Phase 5; see ADR-32.)*
+- [x] T3.9 Integration test against the `mcr.microsoft.com/mssql/server` Docker image, run in CI on Linux only.
+
+  *Phase 3 notes:* read-only `query` runs in a rolled-back transaction (ADR-28). TLS with no settings means verify-full (ADR-29). One pooled connection with batches and no request timeout; decimals come back as JS numbers (ADR-30). Several result sets come back as an array of arrays (ADR-31). The integration test is `test/mssql.integration.test.js`, which runs only when `MSSQL_TEST_PASSWORD` is set; CI has an `mssql` job on Linux.
 
 ### Phase 4: DuckDB
 - [ ] T4.1 Add `@duckdb/node-api` as an **optional dependency** and load it lazily, so the server still runs on a platform without a prebuilt binary.

@@ -23,7 +23,7 @@ Status values: **Accepted**, **Superseded by ADR-n**, **Proposed** (not agreed y
 | [15](#adr-15-an-id-without-its-prefix-is-accepted-when-it-is-unique) | Unprefixed ids accepted when unique | Accepted | 2026-11-16 |
 | [16](#adr-16-profiles-carry-secret-references-resolved-only-at-connect) | Secret references, resolved at `connect` | Accepted | 2026-11-16 |
 | [17](#adr-17-tls-comes-from-the-profile-the-old-rule-is-the-fallback) | TLS from the profile; old rule as fallback | Accepted | 2026-11-16 |
-| [18](#adr-18-read-only-is-also-enforced-by-the-database-session) | Read-only enforced by the database session too | Accepted | 2026-11-16 |
+| [18](#adr-18-read-only-is-also-enforced-by-the-database-session) | Read-only enforced by the database session too | Accepted; SQL Server part superseded by ADR-28 | 2026-11-16 |
 | [19](#adr-19-unusable-connections-are-listed-with-a-reason-not-hidden) | Unusable connections listed with a reason | Accepted | 2026-11-16 |
 | [20](#adr-20-a-failing-source-never-stops-the-server) | A failing source never stops the server | Accepted | 2026-11-16 |
 | [21](#adr-21-tool-output-is-json) | Tool output is JSON | Accepted | 2026-11-16 |
@@ -33,6 +33,11 @@ Status values: **Accepted**, **Superseded by ADR-n**, **Proposed** (not agreed y
 | [25](#adr-25-tools-live-in-srcserverjs-indexjs-only-wires) | Tools in `src/server.js`; `index.js` only wires | Accepted | 2026-11-16 |
 | [26](#adr-26-ci-on-linux-macos-and-windows-with-node-20-and-22) | CI on three OSes × Node 20/22 | Accepted | 2026-11-16 |
 | [27](#adr-27-napi-rskeyring-pinned-to-secret-service-on-linux) | `@napi-rs/keyring`, pinned to Secret Service on Linux | Accepted | 2026-11-16 |
+| [28](#adr-28-sql-server-read-only-queries-run-in-a-transaction-that-is-rolled-back) | SQL Server read-only: queries run in a rolled-back transaction | Accepted | 2026-11-16 |
+| [29](#adr-29-sql-server-tls-verify-unless-told-otherwise) | SQL Server TLS: verify unless told otherwise | Accepted | 2026-11-16 |
+| [30](#adr-30-sql-server-one-pooled-connection-batches-and-no-request-timeout) | SQL Server: one connection, batches, no request timeout | Accepted | 2026-11-16 |
+| [31](#adr-31-several-result-sets-come-back-as-an-array-of-arrays) | Several result sets come back as an array of arrays | Accepted | 2026-11-16 |
+| [32](#adr-32-dbdelves-sql-server-profiles-arrive-with-the-dbdelve-source) | DBDelve's SQL Server profiles arrive with the DBDelve source | Accepted | 2026-11-16 |
 
 ADR-1 to ADR-13 are D1–D13 in `ROADMAP.md` §2, and ADR-14 is Q-E. ADR-15 onwards were decided while building Phases 1 and 2.
 
@@ -183,6 +188,8 @@ ADR-1 to ADR-13 are D1–D13 in `ROADMAP.md` §2, and ADR-14 is Q-E. ADR-15 onwa
 
 **Consequences.** Each engine needs its own way to do this. DuckDB uses `access_mode` (T4.2). For SQL Server, `ApplicationIntent=ReadOnly` does not block writes, so `execute` refusal is the guard there unless a better one is found.
 
+*Update:* ADR-28 found that better way for SQL Server.
+
 ## ADR-19: Unusable connections are listed with a reason, not hidden
 
 **Decision.** `list_profiles` returns `skipped` entries, each with an id and a reason. Examples: no saved password, an engine not supported yet, an SSH tunnel not supported yet, a bad port. A DBeaver connection with any network handler switched on (other than SSL) is skipped until Phase 6, rather than connecting straight to the database host.
@@ -267,3 +274,64 @@ DBDelve's folder follows DBDelve's own `store.rs`: `$XDG_DATA_HOME`, `~/Library/
 - On macOS (arm64), the spike read a password that DBDelve itself had saved, and `findCredentials` listed DBDelve's account. No access prompt appeared.
 
 **Consequences.** Windows (Credential Manager) has not been checked yet, because there is no Windows machine. Check it with `scripts/spike-keychain.js` before Phase 5 is relied on there. The package is a regular dependency, so CI checks that it installs on every OS.
+
+## ADR-28: SQL Server read-only: queries run in a transaction that is rolled back
+
+**Context.** ADR-18 wants the database to refuse writes on read-only profiles, not just the `execute` tool. SQL Server has no session-wide read-only switch. `ApplicationIntent=ReadOnly` only routes to a replica, and a read-only login would need server-side setup.
+
+**Decision.** On read-only SQL Server profiles, `query` opens a transaction, runs the batch in it, and always rolls it back. `execute` is still refused (ADR-8).
+
+**Why.** An LLM that sends `UPDATE` or `DELETE … OUTPUT` through `query` by mistake gets the rows back, but nothing is kept. Reads are unaffected.
+
+**Consequences.**
+- This guards against mistakes, not against someone determined: a script that issues its own `COMMIT` gets past it. True enforcement needs a read-only login, which is the server owner's job.
+- Statements that cannot run in a transaction (`CREATE DATABASE`, `BACKUP`) fail on read-only profiles, which is acceptable.
+
+## ADR-29: SQL Server TLS: verify unless told otherwise
+
+**Decision.** TLS settings map to tedious like this:
+
+| Setting | Result |
+|---|---|
+| `disable` | no encryption |
+| `prefer` or `require` | encrypt, trust any certificate |
+| `verify-ca` or `verify-full` | encrypt and verify, with the CA when one is given |
+| DBeaver's `trustServerCertificate` / `sslTrustServerCertificate` | wins over the mode |
+| DBeaver's `encrypt=false\|optional` | no encryption |
+| nothing said at all | **verify-full** |
+
+`verify-ca` is checked as `verify-full`. Through a tunnel, the certificate is checked against the real hostname (tedious `serverName`).
+
+**Why.**
+- Microsoft's JDBC driver has encrypted and verified by default since 10.2, so a DBeaver connection that works without settings either has a valid certificate or has trust switched on. This matches DBDelve's importer.
+- The Postgres fallback rule (no TLS for localhost) is not carried over. SQL Server always negotiates TLS for the login, and DBeaver users of local Docker images already have trust switched on.
+- tedious can't skip only the hostname check, and checking more is never less than was asked for (ADR-17).
+
+## ADR-30: SQL Server: one pooled connection, batches, no request timeout
+
+**Decision.**
+- The `mssql` pool is capped at one connection.
+- Both `query` and `execute` send SQL as batches (`request.batch`), not through `sp_executesql`.
+- There is no request timeout, which matches DBeaver. Connecting times out after 15 s.
+- The pool's `error` event is always listened to.
+
+**Why.**
+- With a single connection, session state carries over between calls: `#temp` tables, `USE`, `SET`. That is what a user expects from a "connection".
+- Sending a batch keeps `CREATE PROCEDURE`/`VIEW` as the first statement of its batch, and keeps `#temp` tables alive. `sp_executesql` would drop them when it finishes.
+- An unhandled pool `error` would crash the server, as `pg`'s did.
+
+**Consequences.**
+- If the connection drops, the pool reconnects silently on the next call, and session state is lost.
+- DECIMAL, NUMERIC and MONEY come back from tedious as JS numbers, so values beyond 15–17 significant digits lose precision. tedious has no option to return them as strings. Users who need exact values can `CAST(... AS varchar)`.
+
+## ADR-31: Several result sets come back as an array of arrays
+
+**Decision.** If a SQL Server batch returns more than one result set, `query` returns a JSON array with one array of rows per set, and `max_rows` applies to each set. With one set or none, the output is a plain array of rows, as before. Postgres keeps returning the last statement's rows.
+
+**Why.** Stored procedures and scripts commonly return several sets. Dropping all but one would hide data. Keeping the single-set shape unchanged means existing users see no difference.
+
+## ADR-32: DBDelve's SQL Server profiles arrive with the DBDelve source
+
+**Context.** T3.8 (DBDelve `engine = "mssql"`) is in Phase 3, but nothing reads DBDelve's `profiles.toml` until Phase 5.
+
+**Decision.** T3.8 is done as part of T5.2, the DBDelve engine mapping. The SQL Server driver needs nothing more for it: a profile with `engine: "mssql"` works whichever source made it.

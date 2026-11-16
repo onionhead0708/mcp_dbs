@@ -15,14 +15,17 @@ export function decryptCredentials(buffer) {
   return JSON.parse(text);
 }
 
-/** DBeaver provider -> engine, or a reason the connection is skipped. */
-function engineFor(provider) {
+/** DBeaver provider/driver -> engine, or a reason the connection is skipped. */
+function engineFor(provider, driver = "") {
   switch (provider) {
     case "postgresql":
       return { engine: "postgres" };
     case "sqlserver":
     case "mssql":
-      return { reason: "SQL Server is not supported yet" };
+      // The same providers also hold Sybase and the old jTDS driver (T3.7).
+      if (/sybase/i.test(driver)) return { reason: "Sybase is not supported" };
+      if (/jtds/i.test(driver)) return { reason: "the jTDS driver is not supported; switch the connection to Microsoft's driver" };
+      return { engine: "mssql" };
     case "duckdb":
       return { reason: "DuckDB is not supported yet" };
     default:
@@ -70,6 +73,40 @@ export function tlsFrom(configuration) {
   return { mode, rootCert: tab("ssl.ca.cert") ?? driverProperty(configuration, "sslrootcert") };
 }
 
+/** The value of a SQL Server setting from the driver properties or DBeaver's own provider properties. */
+function mssqlSetting(configuration, ...names) {
+  for (const name of names) {
+    const value = driverProperty(configuration, name) ?? text(configuration["provider-properties"]?.[name]);
+    if (value != null) return value;
+  }
+  return null;
+}
+
+/**
+ * TLS for SQL Server (T3.5). `encrypt=false|optional` turns TLS off;
+ * trust-server-certificate is kept as its own flag and wins in the driver.
+ * Otherwise the SSL tab / sslmode, and with nothing said, what Microsoft's
+ * driver does since 10.2: encrypt and verify. Same as DBDelve's importer.
+ */
+export function mssqlTlsFrom(configuration) {
+  const base = tlsFrom(configuration);
+  const encrypt = mssqlSetting(configuration, "encrypt")?.toLowerCase();
+  const trustText = mssqlSetting(configuration, "sslTrustServerCertificate", "trustServerCertificate");
+  const trustServerCert = trustText == null ? null : isTrue(trustText);
+  if (encrypt === "false" || encrypt === "optional" || encrypt === "no") {
+    return { mode: "disable", rootCert: null, trustServerCert };
+  }
+  const mode = base.mode ?? (trustServerCert ? "require" : "verify-full");
+  return { mode, rootCert: base.rootCert, trustServerCert };
+}
+
+/** Why a SQL Server connection's sign-in can't be used, or null (ADR-5). */
+function mssqlAuthProblem(configuration) {
+  const model = configuration["auth-model"];
+  if (!model || model === "sqlserver_database" || model === "native") return null;
+  return `SQL Server sign-in '${model}' is not supported yet (only SQL logins)`;
+}
+
 /**
  * Maps parsed data-sources.json + credentials into profiles. Connections we
  * cannot use are returned in `skipped` with the reason. Ids are
@@ -87,7 +124,8 @@ export function mapDbeaver(dataSources, credentials, { project = "General" } = {
 
     // A connection made from a template names the real database in original-*.
     const provider = conn["original-provider"] ?? conn.provider;
-    const { engine, reason } = engineFor(provider);
+    const driver = conn["original-driver"] ?? conn.driver;
+    const { engine, reason } = engineFor(provider, driver);
     if (!engine) {
       skip(reason);
       continue;
@@ -104,6 +142,14 @@ export function mapDbeaver(dataSources, credentials, { project = "General" } = {
     if (otherHandlers.length) {
       skip(`network handler not supported yet: ${otherHandlers.join(", ")}`);
       continue;
+    }
+
+    if (engine === "mssql") {
+      const problem = mssqlAuthProblem(configuration);
+      if (problem) {
+        skip(problem);
+        continue;
+      }
     }
 
     const cred = credentials[key]?.["#connection"];
@@ -124,7 +170,7 @@ export function mapDbeaver(dataSources, credentials, { project = "General" } = {
           port: configuration.port,
           database: configuration.database,
           auth: { type: "password", user: cred.user, secretRef: inlineSecret(cred.password) },
-          tls: tlsFrom(configuration),
+          tls: engine === "mssql" ? mssqlTlsFrom(configuration) : tlsFrom(configuration),
           readOnly: isTrue(configuration["read-only"]),
         })
       );

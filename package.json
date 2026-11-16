@@ -16,6 +16,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "@napi-rs/keyring": "^2.1.2",
+    "mssql": "^12.7.14",
     "pg": "^8.13.1"
   }
 }

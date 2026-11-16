@@ -80,7 +80,7 @@ export class Session {
       engine: profile.engine,
       readOnly: profile.readOnly,
       tunnel: profile.tunnel?.type ?? null,
-      endpoint: profile.engine === "duckdb" ? profile.path : `${tunnel.host}:${tunnel.port}`,
+      endpoint: profile.engine === "duckdb" ? profile.path : tunnel.port ? `${tunnel.host}:${tunnel.port}` : tunnel.host,
       connectedAt: connectedAt.toISOString(),
       serverVersion,
       ...(error ? { error } : {}),

@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that lets MCP clients (Claude, Kiro, …) 
 >
 > | | Today | Planned |
 > |---|---|---|
-> | Engines | PostgreSQL | SQL Server, DuckDB |
+> | Engines | PostgreSQL, SQL Server | DuckDB |
 > | Profile sources | DBeaver | DBDelve |
 > | Platforms | Linux, macOS, Windows (DBeaver found automatically) | |
 > | Tunnels | none | SSH, AWS SSM |
@@ -14,7 +14,7 @@ A Model Context Protocol (MCP) server that lets MCP clients (Claude, Kiro, …) 
 ## Prerequisites
 
 - Node.js 20 or later
-- DBeaver, with PostgreSQL connections configured and their passwords saved
+- DBeaver, with PostgreSQL or SQL Server connections configured and their passwords saved
 - Linux, macOS or Windows
 
 ## Installation
@@ -92,7 +92,17 @@ Connections that can't be used (no saved password, an engine not supported yet, 
 
 **TLS** follows the connection's SSL tab in DBeaver (`sslMode`, CA certificate), or its `sslmode` driver property. When neither is set, TLS is off for `localhost` and for the `local`/`no_ssl` folders, and on (without checking the certificate) for everything else.
 
-**Read-only** connections (DBeaver's "Read-only connection" setting) refuse `execute`, and their sessions are opened read-only on the server too.
+**Read-only** connections (DBeaver's "Read-only connection" setting) refuse `execute`. On PostgreSQL the session is also opened read-only on the server. On SQL Server, `query` runs inside a transaction that is always rolled back.
+
+### SQL Server
+
+- Sign-in is with a SQL login (user name and password). Connections that use Windows, Kerberos or Azure AD sign-in are skipped for now, and so are the Sybase and jTDS drivers.
+- `execute` splits the script into batches on `GO` lines, like SSMS and sqlcmd. `GO 5` runs the batch five times.
+- `query` returns every result set. With more than one, you get an array of arrays.
+- Everything runs on one connection, so `#temp` tables and `USE` carry over between calls.
+- TLS follows the connection's `encrypt` and "Trust server certificate" settings. With neither set, the certificate is verified, as Microsoft's driver does.
+- `host\INSTANCE` with no port finds a named instance through SQL Server Browser.
+- DECIMAL and MONEY come back as JSON numbers, so very long values lose precision. `CAST` them to `varchar` if you need them exact.
 
 ## Tools
 
@@ -101,7 +111,7 @@ Connections that can't be used (no saved password, an engine not supported yet, 
 | `list_profiles` | List the profiles (id, engine, source, tunnel, read-only), the skipped connections with reasons, and sources that failed to load. Optional `engine`/`source` filters |
 | `connect` | Connect to a profile returned by `list_profiles`, closing any current connection |
 | `query` | Run a SQL query and return the rows as JSON. Optional `max_rows` |
-| `execute` | Run DDL/DML statements and return the number of affected rows. Refused on read-only profiles |
+| `execute` | Run DDL/DML statements and return the number of affected rows. Splits on `GO` for SQL Server. Refused on read-only profiles |
 | `disconnect` | Close the current connection |
 | `status` | Show the current profile, engine, server version and tunnel, and where each profile source was read from (or why it failed) |
 
@@ -109,6 +119,13 @@ Connections that can't be used (no saved password, an engine not supported yet, 
 
 ```bash
 npm test
+```
+
+The SQL Server integration test runs only when a server is given:
+
+```bash
+docker run -d --rm -e ACCEPT_EULA=Y -e 'MSSQL_SA_PASSWORD=Test-Passw0rd!' -p 51433:1433 mcr.microsoft.com/mssql/server:2022-latest
+MSSQL_TEST_PORT=51433 MSSQL_TEST_PASSWORD='Test-Passw0rd!' npm test
 ```
 
 ## License

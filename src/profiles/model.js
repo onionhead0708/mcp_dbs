@@ -7,6 +7,15 @@ export const DEFAULT_PORTS = { postgres: 5432, mssql: 1433 };
 export const TLS_MODES = ["disable", "prefer", "require", "verify-ca", "verify-full"];
 
 /**
+ * The port to use when none is given. A SQL Server named instance
+ * (`host\INSTANCE`) has none: its port is looked up through SQL Server Browser.
+ */
+function defaultPort(engine, host) {
+  if (engine === "mssql" && typeof host === "string" && host.includes("\\")) return null;
+  return DEFAULT_PORTS[engine] ?? null;
+}
+
+/**
  * Builds a profile and checks it. `localId` is the id inside its source; the
  * full id is `<source>:<localId>` (D2). Throws when a field is invalid.
  */
@@ -26,7 +35,7 @@ export function makeProfile(fields) {
     name: fields.name ?? localId,
     folder: fields.folder ?? null,
     host: fields.host ?? null,
-    port: fields.port == null || fields.port === "" ? DEFAULT_PORTS[engine] ?? null : Number(fields.port),
+    port: fields.port == null || fields.port === "" ? defaultPort(engine, fields.host) : Number(fields.port),
     database: fields.database || null,
     path: fields.path ?? null,
     auth: fields.auth ?? null,
@@ -40,7 +49,8 @@ export function makeProfile(fields) {
     if (!profile.path) throw new Error("DuckDB profile has no file path");
   } else {
     if (!profile.host) throw new Error("profile has no host");
-    if (!Number.isInteger(profile.port) || profile.port < 1 || profile.port > 65535) {
+    const namedInstance = profile.port === null && engine === "mssql";
+    if (!namedInstance && (!Number.isInteger(profile.port) || profile.port < 1 || profile.port > 65535)) {
       throw new Error(`invalid port ${fields.port}`);
     }
   }
