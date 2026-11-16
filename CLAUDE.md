@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-mcp-dbs is a Model Context Protocol (MCP) server that gives MCP clients (e.g., Claude) database access. It exposes six tools: `list_profiles`, `connect`, `query`, `execute`, `disconnect` and `status`. Engines: PostgreSQL and SQL Server (DuckDB next). Profiles are loaded from DBeaver configuration files.
+mcp-dbs is a Model Context Protocol (MCP) server that gives MCP clients (e.g., Claude) database access. It exposes six tools: `list_profiles`, `connect`, `query`, `execute`, `disconnect` and `status`. Engines: PostgreSQL, SQL Server and DuckDB. Profiles are loaded from DBeaver configuration files.
 
 The project is being extended to SQL Server and DuckDB, to DBDelve as a second profile source, to SSH and AWS SSM tunnels, and to Linux, macOS and Windows. **`ROADMAP.md` is the plan and task list.** Check it before starting work, and tick off tasks as they are done. **`docs/ADR.md` records every decision with its reasons**: read it before changing behaviour, and add an entry (never rewrite an old one) when a new decision is made.
 
@@ -39,6 +39,7 @@ Build every path with `path`/`os.homedir()`. The OS-specific path functions take
 - `tunnels/index.js`: returns the endpoint to connect to (the profile's host/port until SSH/SSM land).
 - `drivers/`: one module per engine implementing `connect(profile, endpoint, { password })`, `query`, `execute`, `serverVersion`, `close`. `drivers/postgres.js` maps TLS modes to node-postgres, keeps the old localhost/`local`/`no_ssl` rule as the fallback, sets `default_transaction_read_only` on read-only profiles, and listens for `error` so a dropped connection cannot crash the server.
 - `drivers/mssql.js` (+ `mssql-auth.js`, `sql/split-go.js`): one pooled tedious connection, batches via `request.batch`, `execute` split on `GO`, read-only `query` inside a rolled-back transaction, TLS mapping in `tlsOptions()`. Sign-in goes through auth strategies, so Entra can be added later. Integration test: `test/mssql.integration.test.js` (needs `MSSQL_TEST_PASSWORD`).
+- `drivers/duckdb.js`: lazily imports the optional `@duckdb/node-api` (DuckDB 2.0, the same as DBDelve). Refuses missing files, sets `access_mode` from `readOnly`, applies `schema` with `USE`, returns `getRowObjectsJson()` rows, and turns lock errors into a clear message. `close` releases the file lock. Tests: `test/duckdb.test.js` (real temporary files; a child process holds the lock).
 - `session.js`: the single active connection (profile + driver handle + tunnel). `connect` closes the previous connection first. `execute` is refused on read-only profiles.
 - `format.js`: makes rows JSON-safe (BigInt, Date, Buffer → `\x…` hex, decimals, Map/Set, cycles) and applies `max_rows`.
 - `server.js`: tool definitions (`TOOLS`) and a handler per tool name (`createHandlers`, unit-tested without a database).

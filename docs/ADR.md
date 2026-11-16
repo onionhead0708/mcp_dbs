@@ -38,6 +38,10 @@ Status values: **Accepted**, **Superseded by ADR-n**, **Proposed** (not agreed y
 | [30](#adr-30-sql-server-one-pooled-connection-batches-and-no-request-timeout) | SQL Server: one connection, batches, no request timeout | Accepted | 2026-11-16 |
 | [31](#adr-31-several-result-sets-come-back-as-an-array-of-arrays) | Several result sets come back as an array of arrays | Accepted | 2026-11-16 |
 | [32](#adr-32-dbdelves-sql-server-profiles-arrive-with-the-dbdelve-source) | DBDelve's SQL Server profiles arrive with the DBDelve source | Accepted | 2026-11-16 |
+| [33](#adr-33-duckdb-through-duckdbnode-api-20-an-optional-dependency) | DuckDB through `@duckdb/node-api` 2.0, an optional dependency | Accepted | 2026-11-16 |
+| [34](#adr-34-duckdb-values-come-from-duckdbs-own-json-conversion) | DuckDB values come from DuckDB's own JSON conversion | Accepted | 2026-11-16 |
+| [35](#adr-35-a-missing-duckdb-file-is-refused-never-created) | A missing DuckDB file is refused, never created | Accepted | 2026-11-16 |
+| [36](#adr-36-a-locked-duckdb-file-is-an-error-with-no-automatic-fallback) | A locked DuckDB file is an error, with no automatic fallback | Accepted | 2026-11-16 |
 
 ADR-1 to ADR-13 are D1–D13 in `ROADMAP.md` §2, and ADR-14 is Q-E. ADR-15 onwards were decided while building Phases 1 and 2.
 
@@ -335,3 +339,51 @@ DBDelve's folder follows DBDelve's own `store.rs`: `$XDG_DATA_HOME`, `~/Library/
 **Context.** T3.8 (DBDelve `engine = "mssql"`) is in Phase 3, but nothing reads DBDelve's `profiles.toml` until Phase 5.
 
 **Decision.** T3.8 is done as part of T5.2, the DBDelve engine mapping. The SQL Server driver needs nothing more for it: a profile with `engine: "mssql"` works whichever source made it.
+
+## ADR-33: DuckDB through `@duckdb/node-api` 2.0, an optional dependency
+
+**Context.** DuckDB needs a native binary. DBDelve pins the `duckdb` crate at 1.20000.1, which is DuckDB **2.0.0**. Two programs sharing a file should use the same engine version, so neither meets a storage format it doesn't know.
+
+**Decision.** Use DuckDB's official Node client, `@duckdb/node-api` 2.0.0-r.1 (DuckDB 2.0.0), as an **optional** dependency. `drivers/duckdb.js` imports it only when a DuckDB profile connects.
+
+**Why.**
+- Same engine version as DBDelve.
+- Prebuilt binaries exist for Linux (glibc and musl), macOS and Windows on x64 and arm64.
+- Because it is optional and loaded only when needed, the server still installs and runs where no binary exists (T4.1). Connecting to DuckDB there fails with a message that names the platform.
+
+**Consequences.** When DBDelve moves to a new DuckDB version, this dependency should follow. DBeaver's JDBC driver may be on an older DuckDB: DuckDB opens older files, but a file written by a newer DuckDB may not open in an older one.
+
+## ADR-34: DuckDB values come from DuckDB's own JSON conversion
+
+**Decision.** `query` returns `reader.getRowObjectsJson()` as it is, instead of passing JS values through `format.js`:
+
+| Type | Comes back as |
+|---|---|
+| BIGINT, HUGEINT | exact strings |
+| DECIMAL | exact text |
+| TIMESTAMP | text with microseconds, no time-zone conversion |
+| LIST, STRUCT | JSON |
+| MAP | `[{key, value}]` |
+| BLOB | `\x…` hex |
+
+`execute` prepares and runs each statement separately, so each one reports its type and the rows it changed.
+
+**Why.** Converting through JS values loses information: a JS `Date` drops microseconds, and a JS number drops decimal digits. This meets T4.3 without our own code for each type.
+
+**Consequences.** Timestamps look different across engines. DuckDB gives `2026-01-02 03:04:05.123456`, while Postgres and SQL Server give ISO strings ending in `Z`. A future change could make them all the same.
+
+## ADR-35: A missing DuckDB file is refused, never created
+
+**Decision.** The DuckDB driver refuses a path that doesn't exist or isn't a file, and expands `~`. DuckDB itself would quietly create an empty database there.
+
+**Why.** A mistyped or moved path would otherwise "connect" to a new empty database. The user would see an empty schema and be confused, and a stray file would be left behind (T4.5). The check is in the driver, so it covers DuckDB profiles from every source.
+
+## ADR-36: A locked DuckDB file is an error, with no automatic fallback
+
+**Context.** DuckDB lets only one process write to a file. A read-only open also conflicts with a process that has the file open read-write.
+
+**Decision.** If the file is held by another program, `connect` fails with an error that names the file and, where the OS gives it, the process. The error tells the user to disconnect in DBDelve or DBeaver. The server does not try again read-only.
+
+**Why.** Trying again read-only would fail against the same lock, and it would quietly change what the user asked for. The lock is released by `disconnect`, by connecting to another profile, and when the server exits.
+
+**Consequences.** Linux and macOS report a lock with a process number. Windows reports a sharing violation without one. Both are recognised.
