@@ -1,6 +1,6 @@
 # Roadmap: `mcp-dbs`: a multi-engine, multi-source, cross-platform MCP server
 
-Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Phases 3 (SQL Server), 4 (DuckDB) and 5 (DBDelve) done. Next: the T6.3 askpass spike, then Phase 6 (tunnels).** Decisions are in §2.
+Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Phases 3–5 merged; Phase 6 (tunnels) in review. Next: Phase 7.** Decisions are in §2.
 
 ## 1. Goals
 
@@ -219,21 +219,23 @@ src/
   *Phase 5 notes:* DBDelve's defaults are followed, and unknown values fail safe: an unknown `mode` is read-only, an unknown `sslmode` is verify-full (ADR-38). SSH/SSM profiles are mapped but skipped until Phase 6 (ADR-39). `DBDELVE_PROFILES` was added (ADR-40). Checked against a real DBDelve `profiles.toml` (a Postgres profile and a DuckDB profile).
 
 ### Phase 6: Tunnels
-- [ ] T6.1 `tunnels/index.js`: pick a free local port, open the tunnel, wait until it is ready (with a timeout), and tie its lifetime to the session. On `connect` failure, `disconnect` or server exit, the child process is killed.
-- [ ] T6.2 **SSH tunnel, using the system `ssh`** (the same approach as DBDelve, so `~/.ssh/config`, the agent and hardware keys all work):
+- [x] T6.1 `tunnels/index.js`: pick a free local port, open the tunnel, wait until it is ready (with a timeout), and tie its lifetime to the session. On `connect` failure, `disconnect` or server exit, the child process is killed.
+- [x] T6.2 **SSH tunnel, using the system `ssh`** (the same approach as DBDelve, so `~/.ssh/config`, the agent and hardware keys all work):
   - `ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:<local>:<dbhost>:<dbport> [-p port] [-i key] [user@]host`
   - Key passphrases (from DBDelve's keychain, or from DBeaver's `network/ssh_tunnel` credentials) are passed through a small askpass helper (`SSH_ASKPASS` + `SSH_ASKPASS_REQUIRE=force`), never on the command line. SSH password login is not supported (D11).
   - Without a secret, use `BatchMode=yes` so ssh never hangs waiting for a prompt.
   - Windows uses its built-in OpenSSH (`C:\Windows\System32\OpenSSH\ssh.exe`).
-- [ ] T6.3 **Spike:** confirm that askpass works with Windows OpenSSH for **key passphrases**. If it does not, the fallback is to rely on ssh-agent (load the key into the Windows OpenSSH agent) and document that.
-- [ ] T6.4 Unknown host keys: never switch off host-key checking. Fail with a message telling the user to run `ssh <host>` once to accept the key.
-- [ ] T6.5 DBeaver SSH: read `handlers.ssh_tunnel` (host, port, user, auth type, key path) and the `network/ssh_tunnel` credentials (user and key passphrase). Password auth and jump hosts defined inside DBeaver → skipped with a reason (D11).
-- [ ] T6.6 **SSM tunnel:** `aws ssm start-session --target <i-…> --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters host=<dbhost>,portNumber=<dbport>,localPortNumber=<local> [--profile] [--region]`.
+- [x] T6.3 **Spike:** confirm that askpass works with Windows OpenSSH for **key passphrases**. If it does not, the fallback is to rely on ssh-agent (load the key into the Windows OpenSSH agent) and document that. **Passed (2026-11-16)** in CI (`scripts/spike-askpass.js`, job `askpass`). On windows-latest, the built-in `OpenSSH_for_Windows_9.5p2` ran the `.cmd` helper and decrypted a key whose passphrase held quotes, `%PATH%` and `&`; a wrong passphrase was refused. It also passes on Ubuntu and macOS. No fallback is needed.
+- [x] T6.4 Unknown host keys: never switch off host-key checking. Fail with a message telling the user to run `ssh <host>` once to accept the key.
+- [x] T6.5 DBeaver SSH: read `handlers.ssh_tunnel` (host, port, user, auth type, key path) and the `network/ssh_tunnel` credentials (user and key passphrase). Password auth and jump hosts defined inside DBeaver → skipped with a reason (D11).
+- [x] T6.6 **SSM tunnel:** `aws ssm start-session --target <i-…> --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters host=<dbhost>,portNumber=<dbport>,localPortNumber=<local> [--profile] [--region]`.
   - Use `aws_cli`/`session_manager_plugin` from the profile when set; otherwise look them up on the PATH.
   - Wait for "Waiting for connections" before connecting.
   - On Windows, kill the whole process tree on close.
-- [ ] T6.7 TLS through a tunnel: connect to `127.0.0.1` but check the certificate against the real hostname (`servername` for pg, `serverName` for tedious).
-- [ ] T6.8 Integration test: an SSH tunnel to a Docker sshd + Postgres. SSM is tested manually only (it needs AWS).
+- [x] T6.7 TLS through a tunnel: connect to `127.0.0.1` but check the certificate against the real hostname (`servername` for pg, `serverName` for tedious).
+- [x] T6.8 Integration test: an SSH tunnel to a Docker sshd + Postgres. SSM is tested manually only (it needs AWS).
+
+  *Phase 6 notes:* readiness comes from the program's own output (ADR-41). The askpass helper answers passphrase prompts only (ADR-42). Tunnel processes are stopped as a tree (ADR-43). `MCP_DBS_SSH_CONFIG` was added (ADR-44). DBeaver SSH is read as DBDelve imports it (ADR-45). SSH is tested against Docker sshd + Postgres (`scripts/ssh-test-env.sh`, CI job `ssh-tunnel`). The SSM lifecycle is tested with a stand-in `aws`; real AWS is tested by hand only.
 
 ### Phase 7: Polish
 - [ ] T7.1 Add `reload_profiles` and the `list_profiles` filters. Show skip reasons.
