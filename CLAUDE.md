@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-mcp-dbs is a Model Context Protocol (MCP) server that gives MCP clients (e.g., Claude) database access. It exposes four tools: `list_profiles`, `connect`, `query` and `execute`. Profiles are loaded from DBeaver configuration files.
+mcp-dbs is a Model Context Protocol (MCP) server that gives MCP clients (e.g., Claude) database access. It exposes six tools: `list_profiles`, `connect`, `query`, `execute`, `disconnect` and `status`. Profiles are loaded from DBeaver configuration files.
 
 The project is being extended to SQL Server and DuckDB, to DBDelve as a second profile source, to SSH and AWS SSM tunnels, and to Linux, macOS and Windows. **`ROADMAP.md` is the plan and task list.** Check it before starting work, and tick off tasks as they are done.
 
@@ -28,11 +28,17 @@ When the server is started by an MCP client, set these as `env` in the client co
 
 ## Architecture
 
-Today the whole server lives in `index.js`, using `@modelcontextprotocol/sdk` and `pg` (node-postgres). Phase 1 of the roadmap splits it into `src/` modules (profile sources, drivers, tunnels, session).
+`index.js` only wires things up: it loads `.env`, builds the profile registry and the session, and starts the MCP server over stdio. The rest is in `src/` (layout in `ROADMAP.md` §4):
 
-**Key concepts:**
-- **Profiles:** Loaded the first time they are needed, from DBeaver's `data-sources.json` (filtered to `provider === "postgresql"`). Credentials are decrypted from `credentials-config.json` (AES-128-CBC). Profiles are stored in a `Map` keyed by `folder/name` (e.g. `Production/orders-db`). Connections without saved credentials are skipped. SSL is turned off for `localhost` and for the `local`/`no_ssl` folders. Every other connection uses `ssl: { rejectUnauthorized: false }`.
-- **Connection state:** A single `pg.Client` is held in `currentClient`. Only one connection is active at a time; calling `connect` with a new profile disconnects the previous one.
-- **Transport:** `StdioServerTransport`. Nothing may be written to stdout except MCP messages, which is why `console.log` is silenced and `.env` is parsed by hand.
+- `config.js`: `.env` loader (CRLF-safe, never overrides the real environment) and the DBeaver paths.
+- `profiles/model.js`: `makeProfile()` builds and validates the shared profile shape; `describeProfile()` is what tools may show (never secrets).
+- `profiles/registry.js`: merges sources, ids `<source>:<localId>`, caches, `reload()`. A source that throws is reported in `errors`, not fatal. Unusable connections go to `skipped` with a reason. `get()` also accepts an unprefixed id when it is unique.
+- `profiles/sources/dbeaver.js`: decrypts `credentials-config.json` (AES-128-CBC, IV = first 16 bytes) and maps `data-sources.json`. Only Postgres so far; TLS comes from the `*_ssl` handler or the `sslmode` driver property (same order as DBDelve's importer).
+- `secrets/index.js`: profiles hold secret *references*; `resolveSecret()` turns them into text only at `connect`. `InlineSecret` keeps the value in a private field so it never appears in JSON or `util.inspect`.
+- `tunnels/index.js`: returns the endpoint to connect to (the profile's host/port until SSH/SSM land).
+- `drivers/`: one module per engine implementing `connect(profile, endpoint, { password })`, `query`, `execute`, `serverVersion`, `close`. `drivers/postgres.js` maps TLS modes to node-postgres, keeps the old localhost/`local`/`no_ssl` rule as the fallback, sets `default_transaction_read_only` on read-only profiles, and listens for `error` so a dropped connection cannot crash the server.
+- `session.js`: the single active connection (profile + driver handle + tunnel). `connect` closes the previous connection first. `execute` is refused on read-only profiles.
+- `format.js`: makes rows JSON-safe (BigInt, Date, Buffer → `\x…` hex, decimals, Map/Set, cycles) and applies `max_rows`.
+- `server.js`: tool definitions (`TOOLS`) and a handler per tool name (`createHandlers`, unit-tested without a database).
 
-**MCP tool registration pattern:** Tools are defined in the `ListToolsRequestSchema` handler. Tool calls are handled in a single `CallToolRequestSchema` handler that switches on `request.params.name`.
+Nothing may be written to stdout except MCP messages, so `console.log` is redirected to stderr.

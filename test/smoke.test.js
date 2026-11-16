@@ -68,15 +68,23 @@ test("server identifies itself as mcp-dbs", async () => {
   if (result) assert.equal(result.serverInfo.name, "mcp-dbs");
 });
 
-test("lists the four tools", async () => {
+test("lists the tools", async () => {
   const { tools } = await request("tools/list");
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["connect", "execute", "list_profiles", "query"]);
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["connect", "disconnect", "execute", "list_profiles", "query", "status"]);
 });
 
 test("loads PostgreSQL profiles from the DBeaver fixtures", async () => {
   const result = await request("tools/call", { name: "list_profiles", arguments: {} });
   assert.ok(!result.isError, result.content?.[0]?.text);
-  const ids = result.content[0].text.split("\n").sort();
+  const { profiles, skipped, errors } = JSON.parse(result.content[0].text);
   // Only PostgreSQL with saved credentials today; SQL Server and DuckDB come later.
-  assert.deepEqual(ids, ["Production/orders-db", "local-postgres"]);
+  assert.deepEqual(profiles.map((p) => p.id).sort(), ["dbeaver:Production/orders-db", "dbeaver:local-postgres"]);
+  assert.ok(skipped.length > 0);
+  assert.deepEqual(errors, []);
+  assert.ok(!result.content[0].text.includes("test-password"));
+});
+
+test("query without a connection is an error, not a crash", async () => {
+  const result = await request("tools/call", { name: "query", arguments: { sql: "select 1" } });
+  assert.equal(result.isError, true);
 });
