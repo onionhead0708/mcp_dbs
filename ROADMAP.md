@@ -1,6 +1,6 @@
 # Roadmap: `mcp-dbs`: a multi-engine, multi-source, cross-platform MCP server
 
-Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Phases 3 (SQL Server) and 4 (DuckDB) done, except T3.8/T4.5's DBDelve mapping, which moved to Phase 5. Next: Phase 5.** Decisions are in §2.
+Status: **Phases 0–2 done (2026-11-16; CI green on Linux, macOS and Windows). T5.5 keychain spike: Linux and macOS passed, Windows unchecked. Phases 3 (SQL Server), 4 (DuckDB) and 5 (DBDelve) done. Next: the T6.3 askpass spike, then Phase 6 (tunnels).** Decisions are in §2.
 
 ## 1. Goals
 
@@ -187,7 +187,7 @@ src/
 - [x] T3.5 Map TLS: `disable` → `encrypt:false`; `prefer`/`require` → `encrypt:true, trustServerCertificate:true`; `verify-*` → `encrypt:true, trustServerCertificate:false`, plus the CA when given. DBeaver's `sslTrustServerCertificate`/`trustServerCertificate`/`encrypt` take priority.
 - [x] T3.6 Defaults: port 1433 when missing. When `database` is empty, don't send a database name. `host\INSTANCE` is supported when no port is given.
 - [x] T3.7 DBeaver: `provider` `sqlserver` (and `mssql` except the Sybase drivers), `auth-model: sqlserver_database`. Any other auth-model → skipped with a reason. jTDS → skipped.
-- [ ] T3.8 DBDelve: `engine = "mssql"`. *(Moved into T5.2, because the DBDelve source arrives in Phase 5; see ADR-32.)*
+- [x] T3.8 DBDelve: `engine = "mssql"`. *(Moved into T5.2, because the DBDelve source arrives in Phase 5; see ADR-32.)*
 - [x] T3.9 Integration test against the `mcr.microsoft.com/mssql/server` Docker image, run in CI on Linux only.
 
   *Phase 3 notes:* read-only `query` runs in a rolled-back transaction (ADR-28). TLS with no settings means verify-full (ADR-29). One pooled connection with batches and no request timeout; decimals come back as JS numbers (ADR-30). Several result sets come back as an array of arrays (ADR-31). The integration test is `test/mssql.integration.test.js`, which runs only when `MSSQL_TEST_PASSWORD` is set; CI has an `mssql` job on Linux.
@@ -197,24 +197,26 @@ src/
 - [x] T4.2 `drivers/duckdb.js`: open `path` read-write, or read-only when the profile says so (`access_mode`). Apply `schema` with `USE`. `execute` runs several statements.
 - [x] T4.3 Convert values: BIGINT/HUGEINT → string, DECIMAL, DATE/TIMESTAMP, LIST/STRUCT/MAP → JSON.
 - [x] T4.4 Lock conflicts: DuckDB allows one process to write a file. If DBDelve or DBeaver has the file open, return a clear error that says which file and why. The connection is closed on `disconnect` and when the server exits, so the lock is released.
-- [ ] T4.5 DBDelve: `engine = "duckdb"`, `path`. Expand `~`, and refuse a file that does not exist rather than silently creating an empty database. *(The driver already expands `~` and refuses a missing file, for every source (ADR-35). Mapping DBDelve's `engine = "duckdb"` moves into T5.2, like T3.8.)*
+- [x] T4.5 DBDelve: `engine = "duckdb"`, `path`. Expand `~`, and refuse a file that does not exist rather than silently creating an empty database. *(The driver already expands `~` and refuses a missing file, for every source (ADR-35). Mapping DBDelve's `engine = "duckdb"` moves into T5.2, like T3.8.)*
 - [x] T4.6 DBeaver DuckDB mapping: `provider: "duckdb"` → `path` from `configuration.database` (or remove the `jdbc:duckdb:` prefix from `url`). No credentials are required. `read-only` comes from `configuration["read-only"]`. An empty path or `:memory:` → skipped (an in-memory database has nothing to share).
 - [x] T4.7 Tests using a temporary DuckDB file.
 
   *Phase 4 notes:* `@duckdb/node-api` 2.0.0-r.1 is the same DuckDB (2.0.0) that DBDelve uses (ADR-33). Values come from DuckDB's own JSON conversion, so they are exact (ADR-34). The lock test holds the file open from a second process, as DBDelve would.
 
 ### Phase 5: DBDelve source + keychain
-- [ ] T5.1 Parse `profiles.toml` with `smol-toml`. Read only `[[profiles]]` and ignore unknown fields.
-- [ ] T5.2 Map engines: `postgres` (or no engine), `mssql`, `duckdb`, and an `{ ssm = { engine } }` table → that engine plus an SSM tunnel. Any other engine → skipped with a reason.
-- [ ] T5.3 Skip rules: `password_command` set (D3), `ssh.run_as` set, `service` (pg service file) set.
-- [ ] T5.4 `secrets/keychain.js` reads the password from service `dbdelve[-variant]`, account = id. It is called **only when `connect` runs**, so `list_profiles` never triggers a keychain prompt. A missing entry gives a clear error.
+- [x] T5.1 Parse `profiles.toml` with `smol-toml`. Read only `[[profiles]]` and ignore unknown fields.
+- [x] T5.2 Map engines: `postgres` (or no engine), `mssql`, `duckdb`, and an `{ ssm = { engine } }` table → that engine plus an SSM tunnel. Any other engine → skipped with a reason.
+- [x] T5.3 Skip rules: `password_command` set (D3), `ssh.run_as` set, `service` (pg service file) set.
+- [x] T5.4 `secrets/keychain.js` reads the password from service `dbdelve[-variant]`, account = id. It is called **only when `connect` runs**, so `list_profiles` never triggers a keychain prompt. A missing entry gives a clear error. *(Changed: like DBDelve, a missing entry is a blank password, and the hint comes only if the login fails; see ADR-37.)*
 - [x] T5.5 **Spike first:** check on macOS, Windows and Linux (gnome-keyring) that `@napi-rs/keyring` reads entries DBDelve wrote. If this fails, everything else in this phase is blocked. Note: DBDelve uses the Rust `keyring` crate **v4**, `@napi-rs/keyring` wraps **v3**, so Secret Service attributes may differ on Linux. The SSH passphrase service is `dbdelve[-variant]/ssh-passphrase`.
   - Run `node scripts/spike-keychain.js` on each OS. It reads every DBDelve profile's password, never prints a secret, and shows what the OS itself stores when a read misses.
   - **Linux: passed (2026-11-16, Secret Service).** Entries written by `keyring` 4.2.0 exactly as DBDelve writes them, read back by `@napi-rs/keyring` 2.1.2 in both directions, including the `…/ssh-passphrase` service. Then confirmed with a password DBDelve itself saved.
   - **macOS: passed (2026-11-16, arm64, Node 24).** A password saved by DBDelve itself was read, and `findCredentials` listed DBDelve's account. No access prompt appeared.
   - **Windows: not checked** (no Windows machine). It does not block Phases 3–5; check it before T5.4 ships on Windows. *(Ticked for Linux and macOS.)*
-- [ ] T5.6 Map `sslmode`/`root_certificate`, default ports, empty `database`, `schema` and `mode`.
-- [ ] T5.7 Tests: parsing fixtures with a mocked keychain.
+- [x] T5.6 Map `sslmode`/`root_certificate`, default ports, empty `database`, `schema` and `mode`.
+- [x] T5.7 Tests: parsing fixtures with a mocked keychain.
+
+  *Phase 5 notes:* DBDelve's defaults are followed, and unknown values fail safe: an unknown `mode` is read-only, an unknown `sslmode` is verify-full (ADR-38). SSH/SSM profiles are mapped but skipped until Phase 6 (ADR-39). `DBDELVE_PROFILES` was added (ADR-40). Checked against a real DBDelve `profiles.toml` (a Postgres profile and a DuckDB profile).
 
 ### Phase 6: Tunnels
 - [ ] T6.1 `tunnels/index.js`: pick a free local port, open the tunnel, wait until it is ready (with a timeout), and tie its lifetime to the session. On `connect` failure, `disconnect` or server exit, the child process is killed.

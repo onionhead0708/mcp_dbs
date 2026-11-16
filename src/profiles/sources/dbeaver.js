@@ -1,7 +1,7 @@
 // DBeaver: data-sources.json plus the encrypted credentials-config.json.
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { makeProfile } from "../model.js";
+import { makeProfile, normalizeTlsMode } from "../model.js";
 import { inlineSecret } from "../../secrets/index.js";
 import { locateDbeaver } from "../../config.js";
 
@@ -43,15 +43,6 @@ function driverProperty(configuration, key) {
   return name === undefined ? null : text(properties[name]);
 }
 
-/** libpq's spellings, plus the ones DBeaver's other drivers use. */
-function namedMode(mode) {
-  const lowered = mode.toLowerCase().replace(/_/g, "-");
-  const aliases = { allow: "prefer", preferred: "prefer", disabled: "disable", required: "require", "verify-identity": "verify-full" };
-  const known = ["disable", "prefer", "require", "verify-ca", "verify-full"];
-  // A mode we do not know is treated as the strictest, never as less than asked.
-  return aliases[lowered] ?? (known.includes(lowered) ? lowered : "verify-full");
-}
-
 /**
  * TLS for a server connection: the SSL tab (an enabled `*_ssl` handler) first,
  * then the `sslmode` driver property. `mode: null` means DBeaver did not say;
@@ -65,7 +56,7 @@ export function tlsFrom(configuration) {
 
   let mode = null;
   const named = tab("sslMode") ?? driverProperty(configuration, "sslmode");
-  if (named) mode = namedMode(named);
+  if (named) mode = normalizeTlsMode(named);
   else if (isTrue(tab("ssl.verify.server"))) mode = "verify-ca";
   else if (isTrue(tab("ssl.require"))) mode = "require";
   else if (handler) mode = "prefer";

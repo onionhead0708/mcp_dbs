@@ -42,6 +42,10 @@ Status values: **Accepted**, **Superseded by ADR-n**, **Proposed** (not agreed y
 | [34](#adr-34-duckdb-values-come-from-duckdbs-own-json-conversion) | DuckDB values come from DuckDB's own JSON conversion | Accepted | 2026-11-16 |
 | [35](#adr-35-a-missing-duckdb-file-is-refused-never-created) | A missing DuckDB file is refused, never created | Accepted | 2026-11-16 |
 | [36](#adr-36-a-locked-duckdb-file-is-an-error-with-no-automatic-fallback) | A locked DuckDB file is an error, with no automatic fallback | Accepted | 2026-11-16 |
+| [37](#adr-37-no-saved-keychain-password-means-a-blank-password) | No saved keychain password means a blank password | Accepted | 2026-11-16 |
+| [38](#adr-38-dbdelve-profiles-follow-dbdelves-own-defaults-unknown-values-fail-safe) | DBDelve profiles follow DBDelve's defaults; unknown values fail safe | Accepted | 2026-11-16 |
+| [39](#adr-39-tunnelled-profiles-wait-for-phase-6-in-every-source) | Tunnelled profiles wait for Phase 6, in every source | Accepted | 2026-11-16 |
+| [40](#adr-40-dbdelve_profiles-points-at-a-profilestoml) | `DBDELVE_PROFILES` points at a `profiles.toml` | Accepted | 2026-11-16 |
 
 ADR-1 to ADR-13 are D1–D13 in `ROADMAP.md` §2, and ADR-14 is Q-E. ADR-15 onwards were decided while building Phases 1 and 2.
 
@@ -387,3 +391,47 @@ DBDelve's folder follows DBDelve's own `store.rs`: `$XDG_DATA_HOME`, `~/Library/
 **Why.** Trying again read-only would fail against the same lock, and it would quietly change what the user asked for. The lock is released by `disconnect`, by connecting to another profile, and when the server exits.
 
 **Consequences.** Linux and macOS report a lock with a process number. Windows reports a sharing violation without one. Both are recognised.
+
+## ADR-37: No saved keychain password means a blank password
+
+**Context.** T5.4 said a missing keychain entry gives a clear error. DBDelve, though, treats "no keychain item" as a blank password and connects anyway, because a blank password is valid. That covers servers with trust or peer authentication, and logins that have no password.
+
+**Decision.** Do what DBDelve does: connect with a blank password. If that connection then fails, the error says that no password is saved, and names the keychain service and account to save it under in DBDelve. If the password store can't be used at all (locked, no Secret Service, access refused), that is a clear error straight away.
+
+**Why.** A profile that works in DBDelve has to work here too. The hint still gives the clear message T5.4 asked for, but only when it is actually the problem.
+
+## ADR-38: DBDelve profiles follow DBDelve's defaults; unknown values fail safe
+
+**Decision.** Fields are read with DBDelve's own meanings (`StoredProfile` in `store.rs`):
+
+| Field | Meaning here |
+|---|---|
+| `engine` missing | `postgres` |
+| `engine = { ssm = { engine } }` | that engine, plus an SSM tunnel |
+| `sslmode` missing | `prefer` (it predates TLS settings) |
+| `port` missing | the engine default |
+| `database` empty | the login's default database |
+| `mode` missing, `read-write` or `full` | writable |
+| `mode = "read-only"` | read-only |
+
+When a value can't be understood, the safe side wins:
+- An unknown `mode` is treated as **read-only**. DBDelve itself reads it as read-write.
+- An unknown `sslmode` is treated as `verify-full`.
+- An unknown engine is skipped with a reason.
+- Plugin connections (`speaks`/`connection`) are skipped, and so are `password_command` (ADR-3), `service` and `ssh.run_as`.
+
+Only `[[profiles]]` is read, and unknown fields are ignored.
+
+**Why.** DBDelve changes quickly (roadmap risk table). A value added in a newer DBDelve must never quietly make a connection more writable or less encrypted than the user meant.
+
+## ADR-39: Tunnelled profiles wait for Phase 6, in every source
+
+**Decision.** DBDelve's `[profiles.ssh]` and `[profiles.ssm]` are already mapped onto the profile model's `tunnel`, including the passphrase reference `dbdelve[-variant]/ssh-passphrase`. Until a tunnel type is listed in `SUPPORTED_TUNNELS` (`src/tunnels/index.js`), those profiles are skipped with a reason, as DBeaver's are (ADR-19). DuckDB profiles with a tunnel are always skipped.
+
+**Why.** Users see their tunnelled connections and why they can't be used yet, and nothing tries the database host directly. Phase 6 only has to add the type to the set.
+
+## ADR-40: `DBDELVE_PROFILES` points at a `profiles.toml`
+
+**Decision.** A new optional env var, `DBDELVE_PROFILES`, names a `profiles.toml` directly, in the same way `DBEAVER_DATA_SOURCES_JSON` does for DBeaver. The keychain service still comes from `DBDELVE_VARIANT`.
+
+**Why.** Tests, and users with an unusual setup, need to point at a file without faking a home folder on every OS. The keychain service has to keep following the variant, or the passwords would be read from the wrong place.

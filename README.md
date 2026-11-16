@@ -1,20 +1,20 @@
 # mcp-dbs
 
-A Model Context Protocol (MCP) server that lets MCP clients (Claude, Kiro, …) query your databases using the connection profiles you already have in your desktop database tools. You don't need to set up profiles by hand.
+A Model Context Protocol (MCP) server that lets MCP clients (Claude, Kiro, …) query your databases using the connection profiles you already have in DBeaver and DBDelve. You don't need to set up profiles by hand.
 
 > **Status:** this project is moving from a PostgreSQL-only server to a multi-engine one. See [ROADMAP.md](ROADMAP.md).
 >
 > | | Today | Planned |
 > |---|---|---|
 > | Engines | PostgreSQL, SQL Server, DuckDB | |
-> | Profile sources | DBeaver | DBDelve |
+> | Profile sources | DBeaver, DBDelve | |
 > | Platforms | Linux, macOS, Windows (DBeaver found automatically) | |
 > | Tunnels | none | SSH, AWS SSM |
 
 ## Prerequisites
 
 - Node.js 20 or later
-- DBeaver, with PostgreSQL or SQL Server connections configured and their passwords saved, or DuckDB files
+- DBeaver or DBDelve (or both), with PostgreSQL, SQL Server or DuckDB connections. In DBeaver, passwords must be saved. DBDelve keeps them in the OS password store, which is read when you connect.
 - Linux, macOS or Windows
 
 ## Installation
@@ -25,7 +25,11 @@ npm install
 
 ## Configuration
 
-Usually none. The server finds DBeaver's workspace by itself and reads the connections of **every project** in it (`General` and any others):
+Usually none. The server finds DBeaver and DBDelve by itself.
+
+### DBeaver
+
+The server reads the connections of **every project** in DBeaver's workspace (`General` and any others):
 
 | OS | Where it looks |
 |----|----------------|
@@ -44,6 +48,30 @@ If DBeaver keeps its workspace somewhere else, set one of these:
 | `DBEAVER_CREDENTIALS_CONFIG_JSON` | The encrypted `credentials-config.json` that goes with it. Defaults to the one in the same folder. |
 
 Paths may start with `~`. Forward slashes work on Windows too.
+
+### DBDelve
+
+The server reads DBDelve's `profiles.toml` from DBDelve's own folder:
+
+| OS | Folder |
+|----|--------|
+| Windows | `%APPDATA%\dbdelve` |
+| macOS | `~/Library/Application Support/dbdelve` |
+| Linux | `$XDG_DATA_HOME/dbdelve`, or `~/.local/share/dbdelve` |
+
+| Variable | Meaning |
+|----------|---------|
+| `DBDELVE_VARIANT` | Use DBDelve's `dbdelve-<variant>` folder and keychain entries, as DBDelve does. |
+| `DBDELVE_PROFILES` | A `profiles.toml` somewhere else. Passwords still come from the variant's keychain entries. |
+
+Passwords are read from the OS password store (Keychain on macOS, Secret Service such as GNOME Keyring or KWallet on Linux, Credential Manager on Windows) only when you `connect`, never when profiles are listed. On macOS, the first `connect` may ask whether `node` may read the item; choose **Always Allow**. If DBDelve has no saved password for a profile, the server connects with a blank password, as DBDelve does. If that fails, the error says where to save it.
+
+Skipped, with the reason shown in `list_profiles`:
+- profiles that use `password_command` (mcp-dbs never runs commands from a config file)
+- profiles that use a Postgres `service` file
+- profiles with SSH `run_as`
+- engines other than PostgreSQL, SQL Server and DuckDB
+- SSH and SSM tunnels, until tunnel support lands
 
 When running the server directly, you can put these in a `.env` file (copy `.env.example`). When an MCP client starts the server, put them in the client's `env` instead, because the client does not read `.env`.
 
@@ -84,7 +112,7 @@ The same JSON as for Claude Desktop, in `~/.kiro/settings/mcp.json` (for every w
 
 ## Usage
 
-1. **List profiles:** "List all database profiles". Profile ids start with their source, e.g. `dbeaver:Production/orders-db` (`dbeaver:<folder>/<name>`, or `dbeaver:<name>` when the connection has no folder). Connections from a DBeaver project other than `General` also carry the project name: `dbeaver:<project>:<folder>/<name>`. An id without the `dbeaver:` prefix is also accepted when it matches only one profile.
+1. **List profiles:** "List all database profiles". Profile ids start with their source, e.g. `dbeaver:Production/orders-db` or `dbdelve:orders-db` (`dbeaver:<folder>/<name>`, or `dbeaver:<name>` when the connection has no folder). Connections from a DBeaver project other than `General` also carry the project name: `dbeaver:<project>:<folder>/<name>`. An id without the `dbeaver:`/`dbdelve:` prefix is also accepted when it matches only one profile.
 2. **Connect:** "Connect to dbeaver:Production/orders-db"
 3. **Query:** "Query: SELECT * FROM users LIMIT 10"
 

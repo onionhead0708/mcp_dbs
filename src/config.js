@@ -165,9 +165,15 @@ export function dbdelveDataRoot(host = hostInfo()) {
   return env.XDG_DATA_HOME || p.join(home, ".local", "share");
 }
 
-/** DBDelve's folder and profiles.toml. Throws on a bad DBDELVE_VARIANT. */
+/**
+ * DBDelve's folder and profiles.toml. DBDELVE_PROFILES points at a
+ * profiles.toml directly; the keychain service still follows DBDELVE_VARIANT.
+ * Throws on a bad DBDELVE_VARIANT.
+ */
 export function locateDbdelve(host = hostInfo()) {
   const name = dbdelveName(host.env);
+  const override = envPath(host.env.DBDELVE_PROFILES, host);
+  if (override) return { directory: host.path.dirname(override), profilesPath: override, keychainService: name };
   const directory = host.path.join(dbdelveDataRoot(host), name);
   return { directory, profilesPath: host.path.join(directory, "profiles.toml"), keychainService: name };
 }
