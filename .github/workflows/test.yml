@@ -56,3 +56,36 @@ jobs:
         env:
           MSSQL_TEST_PASSWORD: Test-Passw0rd!
           MSSQL_TEST_PORT: "1433"
+
+  # T6.8: SSH tunnels against a real sshd, with Postgres reachable only
+  # through it. Linux only (Docker).
+  ssh-tunnel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: mkdir -p "$RUNNER_TEMP/ssh-test" && scripts/ssh-test-env.sh up "$RUNNER_TEMP/ssh-test"
+      - run: . "$RUNNER_TEMP/ssh-test/env.sh" && node --test test/ssh.integration.test.js
+      - if: always()
+        run: scripts/ssh-test-env.sh down
+
+  # T6.3: does each OS's OpenSSH run our SSH_ASKPASS helper for a key
+  # passphrase? Windows is the one in doubt.
+  askpass:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/spike-askpass.js

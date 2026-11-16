@@ -85,10 +85,37 @@ test("a missing port means the engine default", () => {
   assert.equal(one(postgres({ port: "" })).profiles[0].port, 5432);
 });
 
-test("an enabled SSH tunnel is skipped until tunnels are supported", () => {
-  const { profiles, skipped } = one(postgres({ handlers: { ssh_tunnel: { enabled: true, properties: {} } } }));
-  assert.equal(profiles.length, 0);
-  assert.match(skipped[0].reason, /ssh_tunnel/);
+const withSsh = (properties, login) =>
+  one(postgres({ handlers: { ssh_tunnel: { enabled: true, properties } } }), { c: { "#connection": { user: "u", password: "p" }, ...(login ? { "network/ssh_tunnel": login } : {}) } });
+
+test("SSH tunnel with a key: host, port, user and passphrase from DBeaver (T6.5)", async () => {
+  const [p] = withSsh({ host: "bastion.example.com", port: "2222", authType: "PUBLIC_KEY", keyPath: "~/.ssh/id_ed25519" }, { user: "deploy", password: "key-pass" }).profiles;
+  assert.equal(p.tunnel.type, "ssh");
+  assert.equal(p.tunnel.host, "bastion.example.com");
+  assert.equal(p.tunnel.port, 2222);
+  assert.equal(p.tunnel.user, "deploy");
+  assert.equal(p.tunnel.identityFile, "~/.ssh/id_ed25519");
+  assert.equal(await resolveSecret(p.tunnel.secretRef), "key-pass");
+  assert.ok(!JSON.stringify(p).includes("key-pass"));
+});
+
+test("SSH tunnel through the agent: no key, no passphrase", () => {
+  const [p] = withSsh({ host: "bastion", authType: "AGENT" }, { user: "deploy", password: "ignored" }).profiles;
+  assert.equal(p.tunnel.identityFile, null);
+  assert.equal(p.tunnel.secretRef, null);
+  assert.equal(p.tunnel.port, null, "no port: ssh's own default or ~/.ssh/config");
+});
+
+test("SSH tunnels skipped with a reason: password login, jump hosts, relative key, no host, other handlers", () => {
+  const reason = (properties) => withSsh(properties).skipped[0]?.reason;
+  assert.match(reason({ host: "b", authType: "PASSWORD" }), /password.*ADR-11/);
+  assert.match(reason({ host: "b", authType: "PUBLIC_KEY", "jumpServer.count": "1" }), /jump server/);
+  assert.match(reason({ host: "b", authType: "AGENT", jumpServerEnabled: "true" }), /jump server/);
+  assert.match(reason({ host: "b", authType: "PUBLIC_KEY", keyPath: "keys/id" }), /not absolute/);
+  assert.match(reason({ authType: "AGENT" }), /no host/);
+  assert.equal(withSsh({ host: "b", authType: "PUBLIC_KEY", keyPath: "C:\\keys\\id" }).profiles.length, 1, "a Windows path is absolute");
+  const proxied = one(postgres({ handlers: { socks_proxy: { enabled: true } } }));
+  assert.match(proxied.skipped[0].reason, /socks_proxy/);
 });
 
 test("a disabled SSH tunnel is ignored", () => {

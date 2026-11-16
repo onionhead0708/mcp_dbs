@@ -1,0 +1,30 @@
+// A stand-in for `aws ssm start-session` in tests. No file extension, so
+// `node --test` does not take it for a test; node runs it as CommonJS. Usage:
+//   node fake-aws <ok|expired|hang> <pid-file> ssm start-session ... --parameters <json> ...
+const net = require("node:net");
+const fs = require("node:fs");
+const { spawn } = require("node:child_process");
+
+const [behaviour, pidFile, ...args] = process.argv.slice(2);
+if (behaviour === "expired") {
+  console.error("Error when retrieving token from sso: Token has expired and refresh failed");
+  process.exit(255);
+}
+if (behaviour === "hang") setInterval(() => {}, 1000);
+else {
+  const { host, portNumber, localPortNumber } = JSON.parse(args[args.indexOf("--parameters") + 1]);
+  // Like session-manager-plugin: a child that lives until it is stopped.
+  const plugin = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  fs.writeFileSync(pidFile, String(plugin.pid));
+  net
+    .createServer((client) => {
+      const upstream = net.connect(Number(portNumber[0]), host[0]);
+      client.pipe(upstream).pipe(client);
+      upstream.on("error", () => client.destroy());
+    })
+    .listen(Number(localPortNumber[0]), "127.0.0.1", () => {
+      console.log("Starting session with SessionId: test-0123");
+      console.log(`Port ${localPortNumber[0]} opened for sessionId test-0123.`);
+      console.log("Waiting for connections...");
+    });
+}
