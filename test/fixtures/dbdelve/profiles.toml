@@ -1,0 +1,62 @@
+active = "local-sqlserver"
+projects = []
+
+[fonts]
+chrome = "IBM Plex Sans"
+editor = "JetBrains Mono NL"
+grid = "Noto Sans"
+
+[settings]
+theme = "Tokyo Night"
+preview_rows = 1000
+welcomed = true
+
+[settings.custom_keybindings]
+
+[settings.theme_opacity]
+
+[[profiles]]
+id = "local-sqlserver"
+name = "local-sqlserver"
+host = "localhost"
+database = ""
+user = "tester"
+sslmode = "prefer"
+engine = "mssql"
+statement_timeout = 0
+next_query_id = 2
+color = "green"
+mode = "full"
+confirmed = []
+open_objects = []
+
+[[profiles.open_queries]]
+id = 1
+active = true
+queued_results = 2
+
+[profiles.folds]
+schema-dbo = false
+
+[[profiles]]
+id = "localtest"
+name = "LocalTest"
+host = ""
+database = ""
+user = ""
+engine = "duckdb"
+path = "/home/user/data/test.duckdb"
+statement_timeout = 0
+next_query_id = 1
+color = "green"
+mode = "read-write"
+confirmed = []
+open_objects = []
+
+[[profiles.open_queries]]
+id = 0
+active = true
+queued_results = 0
+
+[profiles.folds]
+schema-main = false

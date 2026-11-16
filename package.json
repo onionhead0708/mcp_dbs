@@ -1,0 +1,20 @@
+{
+  "name": "mcp-dbs",
+  "version": "1.0.0",
+  "description": "MCP server for PostgreSQL (SQL Server and DuckDB planned) using connection profiles from DBeaver (DBDelve planned)",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "mcp-dbs": "./index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "pg": "^8.13.1"
+  }
+}

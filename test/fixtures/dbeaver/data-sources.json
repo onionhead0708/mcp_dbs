@@ -1,0 +1,107 @@
+{
+	"folders": {
+		"Production": {}
+	},
+	"connections": {
+		"postgres-jdbc-local-1": {
+			"provider": "postgresql",
+			"driver": "postgres-jdbc",
+			"name": "local-postgres",
+			"save-password": true,
+			"configuration": {
+				"host": "localhost",
+				"port": "5432",
+				"database": "appdb",
+				"url": "jdbc:postgresql://localhost:5432/appdb",
+				"configurationType": "MANUAL",
+				"type": "dev"
+			}
+		},
+		"postgres-jdbc-prod-1": {
+			"provider": "postgresql",
+			"driver": "postgres-jdbc",
+			"name": "orders-db",
+			"folder": "Production",
+			"save-password": true,
+			"configuration": {
+				"host": "db.example.com",
+				"port": "5432",
+				"database": "orders",
+				"url": "jdbc:postgresql://db.example.com:5432/orders",
+				"configurationType": "MANUAL",
+				"type": "prod"
+			}
+		},
+		"postgres-jdbc-nopass-1": {
+			"provider": "postgresql",
+			"driver": "postgres-jdbc",
+			"name": "no-saved-password",
+			"save-password": false,
+			"configuration": {
+				"host": "localhost",
+				"port": "5432",
+				"database": "appdb",
+				"configurationType": "MANUAL",
+				"type": "dev"
+			}
+		},
+		"dbeaver-sample-database-sqlite-1": {
+			"provider": "sqlite",
+			"driver": "sqlite_jdbc",
+			"name": "DBeaver Sample Database (SQLite)",
+			"save-password": true,
+			"show-system-objects": true,
+			"configuration": {
+				"database": "/home/user/DBeaverData/workspace6/.metadata/sample-database-sqlite-1/Chinook.db",
+				"url": "jdbc:sqlite:/home/user/DBeaverData/workspace6/.metadata/sample-database-sqlite-1/Chinook.db",
+				"configurationType": "MANUAL",
+				"type": "dev"
+			}
+		},
+		"microsoft-local-1": {
+			"provider": "sqlserver",
+			"driver": "microsoft",
+			"name": "local-sqlserver",
+			"save-password": true,
+			"configuration": {
+				"host": "localhost",
+				"port": "1433",
+				"database": "appdb",
+				"url": "jdbc:sqlserver://;serverName=localhost;databaseName=appdb",
+				"configurationType": "MANUAL",
+				"type": "dev",
+				"provider-properties": {
+					"@dbeaver-show-all-schemas@": "true",
+					"sslTrustServerCertificate": "true"
+				},
+				"auth-model": "sqlserver_database"
+			}
+		},
+		"duckdb_jdbc-local-1": {
+			"provider": "duckdb",
+			"driver": "duckdb_jdbc",
+			"name": "DuckDB@/home/user/data/test.duckdb",
+			"save-password": true,
+			"configuration": {
+				"database": "/home/user/data/test.duckdb",
+				"url": "jdbc:duckdb:/home/user/data/test.duckdb",
+				"configurationType": "MANUAL",
+				"type": "dev"
+			}
+		}
+	},
+	"connection-types": {
+		"dev": {
+			"name": "Development",
+			"auto-commit": true,
+			"confirm-execute": false,
+			"confirm-data-change": false
+		},
+		"prod": {
+			"name": "Production",
+			"auto-commit": false,
+			"confirm-execute": true,
+			"confirm-data-change": true
+		}
+	}
+}
