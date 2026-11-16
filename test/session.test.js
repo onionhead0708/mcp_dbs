@@ -118,3 +118,25 @@ test("connect explains an unknown profile", async () => {
   assert.equal(result.isError, true);
   assert.match(textOf(result), /not found/);
 });
+
+test("an unsaved keychain password connects blank, and a failed login says where to save it", async () => {
+  const { KeychainSecret } = await import("../src/secrets/index.js");
+  const seen = [];
+  const driver = {
+    async connect(profile, endpoint, { password }) {
+      seen.push(password);
+      throw new Error("password authentication failed");
+    },
+  };
+  const session = new Session({
+    getDriver: () => driver,
+    openTunnel: async (p) => ({ host: p.host, port: p.port, close: async () => {} }),
+    resolveSecret: async () => null,
+  });
+  const profile = makeProfile({
+    source: "dbdelve", localId: "x", engine: "postgres", host: "h",
+    auth: { type: "password", user: "u", secretRef: new KeychainSecret("dbdelve", "x") },
+  });
+  await assert.rejects(session.connect(profile), /authentication failed\. No password is saved .*service 'dbdelve', account 'x'.*save it in DBDelve/);
+  assert.deepEqual(seen, [""]);
+});

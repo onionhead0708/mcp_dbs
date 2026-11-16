@@ -1,6 +1,13 @@
 // Opens whatever the profile needs between us and the database, and returns
 // the endpoint to connect to. SSH and SSM tunnels arrive in Phase 6.
 
+/**
+ * Tunnel types that can be opened. Sources skip profiles that need any other
+ * (ADR-19), so a tunnelled profile is never tried as a direct connection.
+ * Phase 6 adds "ssh" and "ssm" here.
+ */
+export const SUPPORTED_TUNNELS = new Set();
+
 /** @returns {Promise<{ host, port, tlsServerName, close(): Promise<void> }>} */
 export async function openTunnel(profile) {
   if (profile.tunnel) throw new Error(`${profile.tunnel.type} tunnels are not supported yet`);

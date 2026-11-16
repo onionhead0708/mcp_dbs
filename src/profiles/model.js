@@ -7,6 +7,17 @@ export const DEFAULT_PORTS = { postgres: 5432, mssql: 1433 };
 export const TLS_MODES = ["disable", "prefer", "require", "verify-ca", "verify-full"];
 
 /**
+ * A TLS mode from a config file: libpq's spellings plus the ones other drivers
+ * use. One we don't know is treated as the strictest, never as less than was
+ * asked for (ADR-17).
+ */
+export function normalizeTlsMode(mode) {
+  const lowered = String(mode).trim().toLowerCase().replace(/_/g, "-");
+  const aliases = { allow: "prefer", preferred: "prefer", disabled: "disable", required: "require", "verify-identity": "verify-full" };
+  return aliases[lowered] ?? (TLS_MODES.includes(lowered) ? lowered : "verify-full");
+}
+
+/**
  * The port to use when none is given. A SQL Server named instance
  * (`host\INSTANCE`) has none: its port is looked up through SQL Server Browser.
  */

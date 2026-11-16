@@ -12,7 +12,7 @@ export const TOOLS = [
   {
     name: "list_profiles",
     description:
-      "List the database connection profiles (PostgreSQL, SQL Server, DuckDB) found in DBeaver, with their engine and source. " +
+      "List the database connection profiles (PostgreSQL, SQL Server, DuckDB) found in DBeaver and DBDelve, with their engine and source. " +
       "Connections that cannot be used are listed under `skipped` with the reason.",
     inputSchema: {
       type: "object",

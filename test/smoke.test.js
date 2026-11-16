@@ -30,7 +30,9 @@ before(async () => {
     env: {
       ...process.env,
       DBEAVER_DATA_SOURCES_JSON: path.join(fixtures, "data-sources.json"),
-      DBEAVER_CREDENTIALS_CONFIG_JSON: path.join(fixtures, "credentials-config.json")
+      DBEAVER_CREDENTIALS_CONFIG_JSON: path.join(fixtures, "credentials-config.json"),
+      DBDELVE_PROFILES: path.join(root, "test", "fixtures", "dbdelve", "profiles.toml"),
+      DBDELVE_VARIANT: ""
     },
     stdio: ["pipe", "pipe", "inherit"]
   });
@@ -73,12 +75,14 @@ test("lists the tools", async () => {
   assert.deepEqual(tools.map((t) => t.name).sort(), ["connect", "disconnect", "execute", "list_profiles", "query", "status"]);
 });
 
-test("loads PostgreSQL, SQL Server and DuckDB profiles from the DBeaver fixtures", async () => {
+test("loads profiles from the DBeaver and DBDelve fixtures", async () => {
   const result = await request("tools/call", { name: "list_profiles", arguments: {} });
   assert.ok(!result.isError, result.content?.[0]?.text);
   const { profiles, skipped, errors } = JSON.parse(result.content[0].text);
   // PostgreSQL and SQL Server with saved credentials, and DuckDB (which needs none).
   assert.deepEqual(profiles.map((p) => p.id).sort(), [
+    "dbdelve:local-sqlserver",
+    "dbdelve:localtest",
     "dbeaver:DuckDB@/home/user/data/test.duckdb",
     "dbeaver:Production/orders-db",
     "dbeaver:local-postgres",
@@ -87,6 +91,9 @@ test("loads PostgreSQL, SQL Server and DuckDB profiles from the DBeaver fixtures
   assert.ok(skipped.length > 0);
   assert.deepEqual(errors, []);
   assert.ok(!result.content[0].text.includes("test-password"));
+  // The same name in both sources stays apart, and the bare name is ambiguous.
+  const bare = await request("tools/call", { name: "connect", arguments: { profile_id: "local-sqlserver" } });
+  assert.match(bare.content[0].text, /ambiguous: dbdelve:local-sqlserver, dbeaver:local-sqlserver/);
 });
 
 test("query without a connection is an error, not a crash", async () => {

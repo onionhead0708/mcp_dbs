@@ -23,13 +23,23 @@ export class Session {
   async connect(profile) {
     await this.disconnect();
     const driver = this.#getDriver(profile.engine);
-    const password = await this.#resolveSecret(profile.auth?.secretRef);
+    const ref = profile.auth?.secretRef;
+    const secret = await this.#resolveSecret(ref);
+    // Nothing saved in the keychain is a blank password, as in DBDelve: a
+    // server that needs none still connects (ADR-37).
+    const unsaved = secret === null;
+    const password = unsaved ? "" : secret;
     const tunnel = await this.#openTunnel(profile);
     let handle;
     try {
       handle = await driver.connect(profile, tunnel, { password });
     } catch (error) {
       await tunnel.close().catch(() => {});
+      if (unsaved) {
+        error.message +=
+          `. No password is saved for this profile in the OS password store (service '${ref.service}', account '${ref.account}'):` +
+          " save it in DBDelve and connect again";
+      }
       throw error;
     }
     this.#active = { profile, driver, handle, tunnel, connectedAt: new Date() };

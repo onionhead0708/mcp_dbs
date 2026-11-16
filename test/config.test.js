@@ -113,6 +113,9 @@ test("DBDelve's folder on each OS, with and without a variant", () => {
   const dev = locateDbdelve(linux({ DBDELVE_VARIANT: "dev" }));
   assert.equal(dev.directory, "/home/user/.local/share/dbdelve-dev");
   assert.equal(dev.keychainService, "dbdelve-dev");
+  const pinned = locateDbdelve(linux({ DBDELVE_PROFILES: "~/x/profiles.toml", DBDELVE_VARIANT: "dev" }));
+  assert.equal(pinned.profilesPath, "/home/user/x/profiles.toml");
+  assert.equal(pinned.keychainService, "dbdelve-dev", "the keychain still follows the variant");
 });
 
 test("a DBDELVE_VARIANT that is not a safe folder name is refused", () => {
